@@ -56,6 +56,8 @@ D6,D7 - x
 D5 - reset I8272 (0 active)
 D4 - type of disk drive (0 - 8", 1- 5.25")
 D0-3 - start stop drive motor (drive 0-3)
+
+
 4AH - command port of display controller (discrete logic!)
 D6,7 - x
 D5 - blinking activated (1 active)
@@ -86,7 +88,7 @@ D0 - 0= internal clock, 1= external clock
 53H - interrupt vector B
 programmed in rom and from os like this: port A input with interrupt, port B - output with interrupt
 
-60H-6FH ramdisk
+60H-6FH ramdisk		(TPD: CRT control?)
 
 70H-73H - i8253
 70H - dataport channel 0

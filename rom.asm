@@ -1,10 +1,17 @@
+; Disassembly of Junior80 ROM
+
+	maclib	z80
+
+LF	equ	10
+CR	equ	13
+
 	org	00000h
 L0000:	di			;; 0000: f3          .
 L0001:	mvi	a,093h		;; 0001: 3e 93       >.
 	out	003h		;; 0003: d3 03       ..
 L0005:	jmp	L0014		;; 0005: c3 14 00    ...
 
-; RST 1
+; RST 1 - char to display (save regs)
 L0008:	push	psw		;; 0008: f5          .
 	push	b		;; 0009: c5          .
 L000a:	push	d		;; 000a: d5          .
@@ -23,6 +30,7 @@ L0014:	mvi	a,0b6h		;; 0014: 3e b6       >.
 	mvi	a,003h		;; 001c: 3e 03       >.
 	out	072h		;; 001e: d3 72       .r
 	out	04fh		;; 0020: d3 4f       .O
+	; test all RAM... (above 16K)
 	lxi	h,04000h	;; 0022: 21 00 40    ..@
 L0025:	mov	a,m		;; 0025: 7e          ~
 	cma			;; 0026: 2f          /
@@ -46,9 +54,11 @@ L003b:	lxi	d,0fb4fh	;; 003b: 11 4f fb    .O.
 	ldir			;; 0041: ed b0       ..
 	jmp	0fb4fh		;; 0043: c3 4f fb    .O.
 
+; copied into 0fb4fh
 L0046:	mvi	a,092h		;; 0046: 3e 92       >.
-	out	003h		;; 0048: d3 03       ..
-	lxi	h,L0000		;; 004a: 21 00 00    ...
+	out	003h	; map RAM at 0
+	; test RAM at 1st 16K
+	lxi	h,0000h		;; 004a: 21 00 00    ...
 L004d:	mov	a,m		;; 004d: 7e          ~
 	cma			;; 004e: 2f          /
 	mov	m,a		;; 004f: 77          w
@@ -61,16 +71,19 @@ L004d:	mov	a,m		;; 004d: 7e          ~
 	cpi	040h		;; 0057: fe 40       .@
 	jrnz	L004d		;; 0059: 20 f2        .
 L005b:	mvi	a,001h		;; 005b: 3e 01       >.
-	out	002h		;; 005d: d3 02       ..
+	out	002h	; restore ROM to 0
 	jnz	L01ab		;; 005f: c2 ab 01    ...
 	jmp	L0065		;; 0062: c3 65 00    .e.
+; end of copied code
 
+; 64K RAM OK...
 L0065:	mvi	a,0c3h		;; 0065: 3e c3       >.
 	sta	0ff4fh		;; 0067: 32 4f ff    2O.
 	sta	0ff52h		;; 006a: 32 52 ff    2R.
 	in	001h		;; 006d: db 01       ..
-	ani	004h		;; 006f: e6 04       ..
+	ani	004h	; console is serial port?
 	jrnz	L00bc		;; 0071: 20 49        I
+	; setup Z80-CTC... CRT... 
 	mvi	a,0f0h		;; 0073: 3e f0       >.
 	out	020h		;; 0075: d3 20       . 
 	mvi	a,0cfh		;; 0077: 3e cf       >.
@@ -82,13 +95,14 @@ L0065:	mvi	a,0c3h		;; 0065: 3e c3       >.
 	out	04ch		;; 0082: d3 4c       .L
 	out	04bh		;; 0084: d3 4b       .K
 	lxi	h,L02d1		;; 0086: 21 d1 02    ...
-	shld	0ff53h		;; 0089: 22 53 ff    "S.
+	shld	0ff52h+1	;; 0089: 22 53 ff    "S.
 	lxi	h,L02b6		;; 008c: 21 b6 02    ...
 	shld	0ff50h		;; 008f: 22 50 ff    "P.
 	in	001h		;; 0092: db 01       ..
 	ani	008h		;; 0094: e6 08       ..
 	lxi	d,04f83h	;; 0096: 11 83 4f    ..O
 	jrz	L00ad		;; 0099: 28 12       (.
+	; serial keyboard?
 	out	04fh		;; 009b: d3 4f       .O
 	in	002h		;; 009d: db 02       ..
 	ori	002h		;; 009f: f6 02       ..
@@ -99,6 +113,7 @@ L0065:	mvi	a,0c3h		;; 0065: 3e c3       >.
 	out	022h		;; 00a9: d3 22       ."
 	jr	L00d8		;; 00ab: 18 2b       .+
 
+; parallel keyboard?
 L00ad:	lxi	b,0f852h	;; 00ad: 01 52 f8    .R.
 	outp	d		;; 00b0: ed 51       .Q
 	outp	b		;; 00b2: ed 41       .A
@@ -108,6 +123,8 @@ L00ad:	lxi	b,0f852h	;; 00ad: 01 52 f8    .R.
 	inp	a		;; 00b8: ed 78       .x
 	jr	L00d8		;; 00ba: 18 1c       ..
 
+; Serial port for console...
+; setup i8253 - baud generator
 L00bc:	mvi	a,056h		;; 00bc: 3e 56       >V
 	out	073h		;; 00be: d3 73       .s
 	mvi	a,008h		;; 00c0: 3e 08       >.
@@ -116,9 +133,10 @@ L00bc:	mvi	a,056h		;; 00bc: 3e 56       >V
 	lxi	b,L0913		;; 00c7: 01 13 09    ...
 	outir			;; 00ca: ed b3       ..
 	lxi	h,L030a		;; 00cc: 21 0a 03    ...
-	shld	0ff53h		;; 00cf: 22 53 ff    "S.
+	shld	0ff52h+1	;; 00cf: 22 53 ff    "S.
 	lxi	h,L0245		;; 00d2: 21 45 02    .E.
 	shld	0ff50h		;; 00d5: 22 50 ff    "P.
+
 L00d8:	xra	a		;; 00d8: af          .
 	out	038h		;; 00d9: d3 38       .8
 	im2			;; 00db: ed 5e       .^
@@ -136,8 +154,8 @@ L00d8:	xra	a		;; 00d8: af          .
 	ei			;; 00f6: fb          .
 	call	L01c8		;; 00f7: cd c8 01    ...
 	db	'\** Junior-80 computer **    BOOT vers 1.1$'
-	call	L0749		;; 0125: cd 49 07    .I.
-	jmp	L0314		;; 0128: c3 14 03    ...
+	call	L0749	; setup FDC/drive
+	jmp	L0314	; try to boot
 
 L012b:	lxi	sp,0ffc1h	;; 012b: 31 c1 ff    1..
 	call	L01c8		;; 012e: cd c8 01    ...
@@ -168,12 +186,13 @@ L0183:	xra	a		;; 0183: af          .
 	rnz			;; 0190: c0          .
 L0191:	mvi	a,004h		;; 0191: 3e 04       >.
 	out	04ah		;; 0193: d3 4a       .J
+	; clear disp RAM to blank
 	lxi	h,04000h	;; 0195: 21 00 40    ..@
-	lxi	b,L0fa0		;; 0198: 01 a0 0f    ...
+	lxi	b,4000		;; 0198: 01 a0 0f    ...
 	push	h		;; 019b: e5          .
 	push	h		;; 019c: e5          .
 	pop	d		;; 019d: d1          .
-	mvi	m,020h		;; 019e: 36 20       6 
+	mvi	m,' '		;; 019e: 36 20       6 
 	inx	h		;; 01a0: 23          #
 	mvi	m,007h		;; 01a1: 36 07       6.
 	inx	h		;; 01a3: 23          #
@@ -204,18 +223,18 @@ L01c2:	stax	d		;; 01c2: 12          .
 L01c8:	xthl			;; 01c8: e3          .
 	mov	a,m		;; 01c9: 7e          ~
 	inx	h		;; 01ca: 23          #
-	cpi	024h		;; 01cb: fe 24       .$
+	cpi	'$'		;; 01cb: fe 24       .$
 	xthl			;; 01cd: e3          .
 	rz			;; 01ce: c8          .
-	cpi	05ch		;; 01cf: fe 5c       .\
+	cpi	'\'		;; 01cf: fe 5c       .\
 	mov	c,a		;; 01d1: 4f          O
-	cnz	L0008		;; 01d2: c4 08 00    ...
-	cz	L01da		;; 01d5: cc da 01    ...
+	cnz	L0008	; a.k.a. RST 1
+	cz	L01da	; CR LF
 	jr	L01c8		;; 01d8: 18 ee       ..
 
-L01da:	mvi	c,00dh		;; 01da: 0e 0d       ..
+L01da:	mvi	c,CR		;; 01da: 0e 0d       ..
 	rst	1		;; 01dc: cf          .
-	mvi	c,00ah		;; 01dd: 0e 0a       ..
+	mvi	c,LF		;; 01dd: 0e 0a       ..
 	rst	1		;; 01df: cf          .
 	ret			;; 01e0: c9          .
 
@@ -350,31 +369,34 @@ L02c0:	mov	a,m		;; 02c0: 7e          ~
 	mov	m,a		;; 02cd: 77          w
 	jmp	L07b0		;; 02ce: c3 b0 07    ...
 
-L02d1:	mvi	a,00dh		;; 02d1: 3e 0d       >.
+; CON: is CRT
+; Place char in C on display... handle CR
+L02d1:	mvi	a,00dh	; disp on, validate ram, 80x25
 	out	04ah		;; 02d3: d3 4a       .J
 	lhld	0ff7fh		;; 02d5: 2a 7f ff    *..
 	mov	a,c		;; 02d8: 79          y
-	cpi	00dh		;; 02d9: fe 0d       ..
+	cpi	CR		;; 02d9: fe 0d       ..
 	jrz	L02f8		;; 02db: 28 1b       (.
-	cpi	020h		;; 02dd: fe 20       . 
+	cpi	' '		;; 02dd: fe 20       . 
 	jrc	L02f3		;; 02df: 38 12       8.
 	mov	m,a		;; 02e1: 77          w
 	inx	h		;; 02e2: 23          #
 	inx	h		;; 02e3: 23          #
-L02e4:	lxi	d,04f9fh	;; 02e4: 11 9f 4f    ..O
+L02e4:	lxi	d,(79 shl 8)+159	;; 02e4: 11 9f 4f    ..O
 	push	h		;; 02e7: e5          .
 	dsbc	d		;; 02e8: ed 52       .R
 	pop	h		;; 02ea: e1          .
 	jnc	L0191		;; 02eb: d2 91 01    ...
-L02ee:	mvi	m,05fh		;; 02ee: 36 5f       6_
+L02ee:	mvi	m,'_'	; cursor
 	shld	0ff7fh		;; 02f0: 22 7f ff    "..
-L02f3:	mvi	a,009h		;; 02f3: 3e 09       >.
+L02f3:	mvi	a,009h	; disp on, 80x25
 	out	04ah		;; 02f5: d3 4a       .J
 	ret			;; 02f7: c9          .
 
-L02f8:	mvi	m,020h		;; 02f8: 36 20       6 
+; Find start of current (next?) line...
+L02f8:	mvi	m,' '		;; 02f8: 36 20       6 
 	lxi	d,04000h	;; 02fa: 11 00 40    ..@
-	lxi	b,00a0h		;; 02fd: 01 a0 00    ...
+	lxi	b,80*2		;; 02fd: 01 a0 00    ...
 	xchg			;; 0300: eb          .
 L0301:	dad	b		;; 0301: 09          .
 	push	h		;; 0302: e5          .
@@ -383,6 +405,7 @@ L0301:	dad	b		;; 0301: 09          .
 	jrc	L0301		;; 0306: 38 f9       8.
 	jr	L02e4		;; 0308: 18 da       ..
 
+; CON: is serial port
 L030a:	in	013h		;; 030a: db 13       ..
 	ani	004h		;; 030c: e6 04       ..
 	jrz	L030a		;; 030e: 28 fa       (.
@@ -402,15 +425,15 @@ L0314:	call	L01c8		;; 0314: cd c8 01    ...
 	sta	0ff63h		;; 0339: 32 63 ff    2c.
 	call	L0434		;; 033c: cd 34 04    .4.
 	jnz	L042d		;; 033f: c2 2d 04    .-.
-	lxi	h,0006h		;; 0342: 21 06 00    ...
+	lxi	h,0006h	; N+1 = 7 bytes to read = boot header
 	shld	0ff74h		;; 0345: 22 74 ff    "t.
 	lxi	h,0ff78h	;; 0348: 21 78 ff    .x.
 	shld	0ff72h		;; 034b: 22 72 ff    "r.
 	lda	0ff77h		;; 034e: 3a 77 ff    :w.
 	ora	a		;; 0351: b7          .
-	mvi	a,006h		;; 0352: 3e 06       >.
+	mvi	a,006h	; READ DATA
 	jz	L0359		;; 0354: ca 59 03    .Y.
-	mvi	a,046h		;; 0357: 3e 46       >F
+	mvi	a,046h	; READ DATA + MFM
 L0359:	sta	0ff68h		;; 0359: 32 68 ff    2h.
 	call	L05a9		;; 035c: cd a9 05    ...
 	jnz	L042d		;; 035f: c2 2d 04    .-.
@@ -600,22 +623,24 @@ L0516:	db	2,9,0ah,0ffh,'F'
 L051b:	db	3,5,' ',0ffh,'F'
 L0520:	db	0,10h,7,80h
 	db	6
+
 L0525:	push	b		;; 0525: c5          .
 	mvi	c,0ffh		;; 0526: 0e ff       ..
 	push	psw		;; 0528: f5          .
-L0529:	in	040h		;; 0529: db 40       .@
+L0529:	in	040h	; wait for not-busy (timeout)
 	ani	01fh		;; 052b: e6 1f       ..
 	jnz	L054e		;; 052d: c2 4e 05    .N.
+	; now ready for command...
 	pop	psw		;; 0530: f1          .
 	pop	b		;; 0531: c1          .
 L0532:	push	b		;; 0532: c5          .
 	mvi	c,0ffh		;; 0533: 0e ff       ..
 	push	psw		;; 0535: f5          .
-L0536:	in	040h		;; 0536: db 40       .@
+L0536:	in	040h	; wait for RQM (timeout)
 	ral			;; 0538: 17          .
 	jnc	L0563		;; 0539: d2 63 05    .c.
 	pop	psw		;; 053c: f1          .
-	out	041h		;; 053d: d3 41       .A
+	out	041h	; send command to FDC
 	pop	b		;; 053f: c1          .
 	ret			;; 0540: c9          .
 
@@ -847,33 +872,36 @@ L072d:	lda	0ff68h		;; 072d: 3a 68 ff    :h.
 	cmp	m		;; 0747: be          .
 	ret			;; 0748: c9          .
 
+; setup FDC/drive
 L0749:	xra	a		;; 0749: af          .
 	out	048h		;; 074a: d3 48       .H
 	in	001h		;; 074c: db 01       ..
-	ani	001h		;; 074e: e6 01       ..
+	ani	001h	; option... 8" or 5"?
 	di			;; 0750: f3          .
 	jz	L0769		;; 0751: ca 69 07    .i.
+	; 8" drive boot
 	mvi	a,020h		;; 0754: 3e 20       > 
 	out	048h		;; 0756: d3 48       .H
-	mvi	a,003h		;; 0758: 3e 03       >.
+	mvi	a,003h	; SPECIFY command...
 	call	L0525		;; 075a: cd 25 05    .%.
-	mvi	a,06fh		;; 075d: 3e 6f       >o
+	mvi	a,06fh	; step rate/head load
 	call	L0532		;; 075f: cd 32 05    .2.
-	mvi	a,02eh		;; 0762: 3e 2e       >.
+	mvi	a,02eh	; head load time/non-DMA
 L0764:	call	L0532		;; 0764: cd 32 05    .2.
 	ei			;; 0767: fb          .
 	ret			;; 0768: c9          .
 
+; 5.25" drive boot
 L0769:	mvi	a,033h		;; 0769: 3e 33       >3
 	out	048h		;; 076b: d3 48       .H
-	mvi	a,003h		;; 076d: 3e 03       >.
+	mvi	a,003h	; SPECIFY command...
 	call	L0525		;; 076f: cd 25 05    .%.
-	mvi	a,00fh		;; 0772: 3e 0f       >.
+	mvi	a,00fh	; step rate/head load
 	call	L0532		;; 0774: cd 32 05    .2.
-	mvi	a,026h		;; 0777: 3e 26       >&
+	mvi	a,026h	; head load time/non-DMA
 	jmp	L0764		;; 0779: c3 64 07    .d.
 
-	push	psw		;; 077c: f5          .
+L077c:	push	psw		;; 077c: f5          .
 	push	h		;; 077d: e5          .
 	lxi	h,0ff69h	;; 077e: 21 69 ff    .i.
 	in	040h		;; 0781: db 40       .@
