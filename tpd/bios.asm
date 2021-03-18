@@ -58,13 +58,27 @@ Lde52	equ	$-2
 
 Lde6f:	db	0	; port 042h image
 
-Lde70:	dw	Lea95,Lee2f,Led8d,Lee1d,Lea95,Led20
-	dw	Lec7b,Led0f,Lea95,Le99b,Lea95
-
-Lde86:	dw	Lf0da
-
-	dw	Lea95,Lea95,Lea95,Le8e8,Leaa1
-	dw	Lea95,Lea86,Lec42
+; interrupt vectors
+Lde70:	dw	nulint	; chB TxE
+	dw	Lee2f	; chB Ext/sts change
+	dw	Led8d	; chB RxA
+	dw	Lee1d	; chB Rx spc
+	dw	nulint	; chA TxE
+	dw	Led20	; chA Ext/sts change
+	dw	Lec7b	; chA RxA
+	dw	Led0f	; chA Rx spc
+	dw	nulint	; xx80
+	dw	Le99b	; xx82
+	dw	nulint	; xx84
+Lde86:	dw	Lf0da	; xx86
+	dw	nulint	; xx88 - CTC2 ch0
+	dw	nulint	; xx8a - CTC2 ch1
+	dw	nulint	; xx8c - CTC2 ch2
+	dw	Le8e8	; xx8e - CTC2 ch3 FDC
+	dw	Leaa1	; xx90
+	dw	nulint	; xx92
+	dw	Lea86	; xx94 - PIO chA
+	dw	Lec42	; xx96 - PIO chB
 
 Lde98:	dw	Le920,Le928,Le948,Le930,Le938,Le940
 	dw	Lea0c,Lfd1e
@@ -1331,12 +1345,38 @@ Le8c0:	dw	40
 Le8cf:	db	1,5,9,13,2,6,10,14,3,7,11,15,4,8,12,16
 Le8df:	db	0,4,8,3,7,2,6,1,5
 
-Le8e8:	db	0f5h,0dbh,'@',0e5h,0c5h,21h,0f0h,0fch,0e6h
-	db	10h,0c2h,0fh,0e9h,6,8,0cdh,'/',0e7h,0c1h,0cdh,'9',0e7h,'#w'
-	db	0cdh,'9',0e7h,'~',0e6h,' ',0cah,93h,0eah,'+6',1,0c3h,93h
-	db	0eah
-	db	'6',1,6,7,'#',0cdh,'9',0e7h,'w',5,0c2h,13h,0e9h,0c1h,0c3h
-	db	93h,0eah
+Le8e8:	push	psw
+	in	040h
+	push	h
+	push	b
+	lxi	h,Lfcf0
+	ani	010h
+	jnz	Le90f	; FDC still busy...
+	mvi	b,008h
+	call	Le72f
+	pop	b
+	call	Le739
+	inx	h
+	mov	m,a
+	call	Le739
+	mov	a,m
+	ani	020h
+	jz	Lea93
+	dcx	h
+	mvi	m,001h
+	jmp	Lea93
+
+; FDC still busy
+Le90f:	mvi	m,001h
+	mvi	b,007h
+Le913:	inx	h
+	call	Le739
+	mov	m,a
+	dcr	b
+	jnz	Le913
+	pop	b
+	jmp	Lea93
+
 Le920:	dw	Led37
 Le922:	dw	Lea7d
 	dw	rdrin
@@ -1543,9 +1583,9 @@ Lea86:	push	psw		;; ea86: f5          .
 	mvi	m,001h		;; ea8f: 36 01       6.
 	inx	h		;; ea91: 23          #
 	mov	m,a		;; ea92: 77          w
-	pop	h		;; ea93: e1          .
+Lea93:	pop	h		;; ea93: e1          .
 	pop	psw		;; ea94: f1          .
-Lea95:	ei			;; ea95: fb          .
+nulint:	ei			;; ea95: fb          .
 	reti			;; ea96: ed 4d       .M
 
 Lea98:	lxi	h,Lfd26		;; ea98: 21 26 fd    .&.
@@ -1555,6 +1595,7 @@ Lea9b:	mov	a,m		;; ea9b: 7e          ~
 	mvi	a,0ffh		;; ea9e: 3e ff       >.
 	ret			;; eaa0: c9          .
 
+; some keyboard device
 Leaa1:	push	psw		;; eaa1: f5          .
 	push	h		;; eaa2: e5          .
 	push	b		;; eaa3: c5          .
@@ -1563,9 +1604,9 @@ Leaa1:	push	psw		;; eaa1: f5          .
 	mov	e,a		;; eaa7: 5f          _
 	ani	07fh		;; eaa8: e6 7f       ..
 	lxi	b,00006h	;; eaaa: 01 06 00    ...
-	lxi	h,Leae2+1		;; eaad: 21 e3 ea    ...
+	lxi	h,Leae4-1	;; eaad: 21 e3 ea    ...
 	ccdr			;; eab0: ed b9       ..
-	lxi	h,Leae2+2		;; eab2: 21 e4 ea    ...
+	lxi	h,Leae4		;; eab2: 21 e4 ea    ...
 	jrnz	Leae5		;; eab5: 20 2e        .
 	mov	b,c		;; eab7: 41          A
 	inr	b		;; eab8: 04          .
@@ -1598,9 +1639,10 @@ Lead7:	pop	d		;; ead7: d1          .
 	ei			;; eadb: fb          .
 	reti			;; eadc: ed 4d       .M
 
-	lda	03845h		;; eade: 3a 45 38    :E8
-	dcr	e		;; eae1: 1d          .
-Leae2:	lhld	00036h		;; eae2: 2a 36 00    *6.
+; keyboard map tables
+	db	3ah,45h,38h,1dh,2ah,36h
+Leae4:	db	0
+
 Leae5:	bit	7,e		;; eae5: cb 7b       .{
 	jrnz	Lead7		;; eae7: 20 ee        .
 	sta	Lfd27		;; eae9: 32 27 fd    2'.
@@ -3062,35 +3104,38 @@ Lf5d5:	di			;; f5d5: f3          .
 	out	038h		;; f5d7: d3 38       .8
 	lxi	sp,00100h	;; f5d9: 31 00 01    1..
 	im2			;; f5dc: ed 5e       .^
-	mvi	a,0deh		;; f5de: 3e de       >.
+	mvi	a,HIGH Lde70	;; f5de: 3e de       >.
 	stai			;; f5e0: ed 47       .G
+	; CTC init...???
 	lxi	d,05fdfh	;; f5e2: 11 df 5f    .._
 	lxi	h,02f01h	;; f5e5: 21 01 2f    ../
 	mvi	c,020h		;; f5e8: 0e 20       . 
-	outp	d		;; f5ea: ed 51       .Q
+	outp	d	;05fh	;; f5ea: ed 51       .Q
 	mvi	a,000h		;; f5ec: 3e 00       >.
-	outp	a		;; f5ee: ed 79       .y
+	outp	a	;000h	;; f5ee: ed 79       .y
 	mvi	a,080h		;; f5f0: 3e 80       >.
-	outp	a		;; f5f2: ed 79       .y
-	inr	c		;; f5f4: 0c          .
+	outp	a	;080h	;; f5f2: ed 79       .y
+	inr	c	;+021h	;; f5f4: 0c          .
 	mvi	a,0dfh		;; f5f5: 3e df       >.
-	outp	a		;; f5f7: ed 79       .y
+	outp	a	;0dfh	;; f5f7: ed 79       .y
 	mvi	a,078h		;; f5f9: 3e 78       >x
-	outp	a		;; f5fb: ed 79       .y
-	inr	c		;; f5fd: 0c          .
-	inr	c		;; f5fe: 0c          .
-	inr	c		;; f5ff: 0c          .
-	outp	d		;; f600: ed 51       .Q
-	outp	l		;; f602: ed 69       .i
+	outp	a	;078h	;; f5fb: ed 79       .y
+	inr	c	;+022h	;; f5fd: 0c          .
+	inr	c	;+023h	;; f5fe: 0c          .
+	inr	c	;+024h	;; f5ff: 0c          .
+	; second CTC? same as Jr. 020h?
+	outp	d	;05fh	;; f600: ed 51       .Q
+	outp	l	;001h	;; f602: ed 69       .i
 	mvi	a,088h		;; f604: 3e 88       >.
-	outp	a		;; f606: ed 79       .y
-	inr	c		;; f608: 0c          .
-	inr	c		;; f609: 0c          .
-	outp	d		;; f60a: ed 51       .Q
-	outp	l		;; f60c: ed 69       .i
-	inr	c		;; f60e: 0c          .
-	outp	e		;; f60f: ed 59       .Y
-	outp	l		;; f611: ed 69       .i
+	outp	a	;088h	;; f606: ed 79       .y
+	inr	c	;+025h	;; f608: 0c          .
+	inr	c	;+026h	;; f609: 0c          .
+	outp	d	;05fh	;; f60a: ed 51       .Q
+	outp	l	;001h	;; f60c: ed 69       .i
+	inr	c	;+027h	;; f60e: 0c          .
+	outp	e	;0dfh	;; f60f: ed 59       .Y
+	outp	l	;001h	;; f611: ed 69       .i
+	;
 	mvi	a,016h		;; f613: 3e 16       >.
 	out	02bh		;; f615: d3 2b       .+
 	mvi	a,008h		;; f617: 3e 08       >.
@@ -3111,10 +3156,12 @@ Lf5d5:	di			;; f5d5: f3          .
 	out	000h		;; f635: d3 00       ..
 	mvi	a,002h		;; f637: 3e 02       >.
 	out	001h		;; f639: d3 01       ..
+	; another CTC??? or PIO?
 	mvi	a,04fh		;; f63b: 3e 4f       >O
 	out	02eh		;; f63d: d3 2e       ..
 	mvi	a,090h		;; f63f: 3e 90       >.
 	out	02eh		;; f641: d3 2e       ..
+	; Z80-PIO
 	mvi	a,04fh		;; f643: 3e 4f       >O
 	out	052h		;; f645: d3 52       .R
 	mvi	a,00fh		;; f647: 3e 0f       >.
@@ -3125,6 +3172,7 @@ Lf5d5:	di			;; f5d5: f3          .
 	out	053h		;; f651: d3 53       .S
 	mvi	a,083h		;; f653: 3e 83       >.
 	out	053h		;; f655: d3 53       .S
+	; Z80-SIO
 	mvi	b,008h		;; f657: 06 08       ..
 	mvi	c,012h		;; f659: 0e 12       ..
 	lxi	h,Lf8e1		;; f65b: 21 e1 f8    ...
@@ -3330,8 +3378,14 @@ Lf8d4:	inx	h		;; f8d4: 23          #
 	mov	m,a		;; f8db: 77          w
 	jr	Lf8d4		;; f8dc: 18 f6       ..
 
-Lf8de:	db	18h,12h,'p'
-Lf8e1:	db	14h,'L',15h,0eah,3,0c1h,1,15h
+; chan B init
+Lf8de:	db	18h	; ch reset
+	db	12h,LOW Lde70	; reg 2 - int vector
+; chan A init
+Lf8e1:	db	14h,4ch	; reg 4 - 16x, 2st, NP
+	db	15h,0eah ;reg 5 - DTR/RTS, Tx ena
+	db	3,0c1h	; reg 3 - 8b, Rx ena
+	db	1,15h	; reg 1 - INT on all, ext, status/parity affects vector
 
 Lf8e9:	db	11,'AUTOEXEC' ; followed by 'BAT' = 11 chars
 
@@ -3395,20 +3449,16 @@ Lfcee:	ds	0
 	ds	1
 Lfcef:	ds	0
 	ds	1
-Lfcf0:	ds	0
-	ds	1
-Lfcf1:	ds	0
-	ds	1
-Lfcf2:	ds	0
-	ds	1
-Lfcf3:	ds	0
-	ds	1
-Lfcf4:	ds	0
-	ds	3
-Lfcf7:	ds	0
-	ds	1
-Lfcf8:	ds	0
-	ds	4
+
+; FDC results block?
+Lfcf0:	ds	1
+Lfcf1:	ds	1
+Lfcf2:	ds	1
+Lfcf3:	ds	1
+Lfcf4:	ds	3
+Lfcf7:	ds	1
+
+Lfcf8:	ds	4
 Lfcfc:	ds	0
 	ds	1
 Lfcfd:	ds	0
