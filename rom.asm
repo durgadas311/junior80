@@ -27,10 +27,10 @@ SIO_B	equ	11h
 SIO_AC	equ	12h
 SIO_BC	equ	13h
 
-CTC_0	equ	20h
-CTC_1	equ	21h
-CTC_2	equ	22h
-CTC_3	equ	23h
+CTC_0	equ	20h	; n/c?
+CTC_1	equ	21h	; vert. blanking?
+CTC_2	equ	22h	; kbd intr
+CTC_3	equ	23h	; FDC intr
 
 FDC_STS	equ	40h
 FDC_DAT	equ	41h
@@ -107,8 +107,8 @@ fdcfmt	equ	0ff77h	; floppy format detected, 0=SD, else DD
 stack	equ	0ffc1h
 
 	org	00000h
-L0000:	di			;; 0000: f3          .
-	mvi	a,093h	; A mode 0, in; Ch out; B mode 0 in; Cl in
+	di			;; 0000: f3          .
+	mvi	a,093h	; A mode 0 in, B mode 0 in, Ch out Cl in
 	out	PP_CTL		;; 0003: d3 03       ..
 	jmp	L0014		;; 0005: c3 14 00    ...
 
@@ -152,12 +152,12 @@ L0036:	jr	L003b		;; 0036: 18 03       ..
 	jmp	L0802		;; 0038: c3 02 08    ...
 
 L003b:	lxi	d,0fb4fh	;; 003b: 11 4f fb    .O.
-	lxi	b,001fh		;; 003e: 01 1f 00    ...
+	lxi	b,n0046		;; 003e: 01 1f 00    ...
 	ldir			;; 0041: ed b0       ..
 	jmp	0fb4fh		;; 0043: c3 4f fb    .O.
 
 ; copied into 0fb4fh
-L0046:	mvi	a,092h	; A mode 0, in; Ch out; B mode 0 in; Cl out
+L0046:	mvi	a,092h	; A mode 0 in, B mode 0 in; C out
 	out	PP_CTL	; map RAM at 0?
 	; test RAM at 1st 16K
 	lxi	h,0000h		;; 004a: 21 00 00    ...
@@ -176,6 +176,7 @@ L005b:	mvi	a,001h		;; 005b: 3e 01       >.
 	out	PP_C	; restore ROM to 0
 	jnz	die		;; 005f: c2 ab 01    ...
 	jmp	L0065		;; 0062: c3 65 00    .e.
+n0046	equ	$-L0046
 ; end of copied code
 
 ; 64K RAM OK...
@@ -410,19 +411,19 @@ sioin:	in	SIO_BC		;; 0245: db 13       ..
 	in	SIO_B		;; 024a: db 11       ..
 	ret			;; 024c: c9          .
 
-; Keyboard interrupt (parallel)
+; PC Keyboard interrupt (scan codes)
 kb1int:	push	psw		;; 024d: f5          .
 	push	h		;; 024e: e5          .
 	push	b		;; 024f: c5          .
-	in	PP_A		;; 0250: db 00       ..
+	in	PP_A	; get key code
 	out	INT_RST	; clear intr
-	bit	7,a	; serial kbd?
-	jrnz	L0273	; ignore intr if serial
+	bit	7,a	; meta "key released"?
+	jrnz	L0273	; ignore intr if key-up event
 	lxi	b,0007h		;; 0258: 01 07 00    ...
 	lxi	h,L0276+6	;; 025b: 21 7c 02    .|.
 	ccdr			;; 025e: ed b9       ..
-	jrz	L0273		;; 0260: 28 11       (.
-	cpi	':'		;; 0262: fe 3a       .:
+	jrz	L0273	; just ignore meta keys
+	cpi	z027c	; length of table
 	jrnc	L0273		;; 0264: 30 0d       0.
 	lxi	h,L027c		;; 0266: 21 7c 02    .|.
 	mov	c,a		;; 0269: 4f          O
@@ -434,17 +435,22 @@ kb1int:	push	psw		;; 024d: f5          .
 	mov	m,a	; translated kbd char
 L0273:	jmp	reti3	; return from intr
 
-; lookup table? (L027c--) exceptions?
-; special key handling...
-L0276:	; scan codes, not chars (?)
-	db	3ah,45h,38h,1dh,2ah,36h	; ignored codes (keys)...
-; Keyboard map?
-L027c:	db	0
-	db	ESC,'1234567890-=',BS,BEL
-	db	'QWERTYUIOP[]',CR,0
-	db	'ASDFGHJKL;''`',0,'\'
-	db	'ZXCVBNM,./',0
+L0276:	; scan codes for meta keys
+	db	3ah	; Caps Lock
+	db	45h	; Num Lock
+	db	38h	; l/r Alt
+	db	1dh	; l/r Ctrl
+	db	2ah	; left Shift
+	db	36h	; right Shift
+
+; Keyboard map - scan codes to ASCII
+L027c:	db	0	; scan code 0 not used
+	db	ESC,'1234567890-=',BS
+	db	BEL,'QWERTYUIOP[]',CR
+	db	0,'ASDFGHJKL;''`',0
+	db	'\','ZXCVBNM,./',0
 	db	'*',0,' '
+z027c	equ	$-L027c
 
 ; Wait for intr to deliver keystroke
 kbdin:	lxi	h,0ff5bh	;; 02b6: 21 5b ff    .[.
@@ -458,7 +464,7 @@ L02c0:	mov	a,m		;; 02c0: 7e          ~
 	ei			;; 02c1: fb          .
 	ret			;; 02c2: c9          .
 
-; Z80-PIO chA input? alt kbd?
+; ASCII Keyboard interrupt - no translation
 kb2int:	push	psw		;; 02c3: f5          .
 	in	PIO_A		;; 02c4: db 50       .P
 	push	h		;; 02c6: e5          .
