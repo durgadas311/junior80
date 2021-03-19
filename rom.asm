@@ -54,14 +54,27 @@ CTR_2	equ	72h	; i8253 ch 2
 CTR_C	equ	73h	; i8253 ctrl
 
 ; i8255 B bits (dipsw)
-DRV0_8	equ	00000001b	; drives 0,1 are 8"
-DRV2_8	equ	00000010b	; drives 2,3 are 8"
-CON_SER	equ	00000100b	; CON: is serial port
-KBD_SER	equ	00001000b	; keyboard is serial port
+CFG_801	equ	00000001b	; drives 0,1 are 8"
+CFG_823	equ	00000010b	; drives 2,3 are 8"
+CFG_SER	equ	00000100b	; 1 = CON: is serial port
+CFG_PCK	equ	00001000b	; 1 = PC keyboard (scan codes)
 
 ; i8257 count reg control bits
 DMA_RD	equ	80h	; read memory, write device
 DMA_WR	equ	40h	; write memory, read device
+
+; FDC_CTL port bits
+FDC_RST	equ	20h	; /RESET to i8272 (0=RESET)
+FDC_5IN	equ	10h	; 5.25" drive type enable
+MTR_DS0	equ	01h	; MOTOR on to DS0
+MTR_DS1	equ	02h	; MOTOR on to DS1
+MTR_DS2	equ	04h	; MOTOR on to DS2
+MTR_DS3	equ	08h	; MOTOR on to DS3
+
+PPC_SPK	equ	11000000b	; turn speaker on
+PPC_64K	equ	00000000b	; bank select for 64K RAM
+PPC_ROM	equ	00000001b	; bank select for ROM, video RAM, high RAM
+PPC_KRS	equ	00000010b	; PC kbd /RESET (0=RESET)
 
 ; ASCII constants
 BEL	equ	7
@@ -172,7 +185,7 @@ L004d:	mov	a,m		;; 004d: 7e          ~
 	mov	a,h		;; 0056: 7c          |
 	cpi	HIGH romend	;; 0057: fe 40       .@
 	jrnz	L004d		;; 0059: 20 f2        .
-L005b:	mvi	a,001h		;; 005b: 3e 01       >.
+L005b:	mvi	a,PPC_ROM	;; 005b: 3e 01       >.
 	out	PP_C	; restore ROM to 0
 	jnz	die		;; 005f: c2 ab 01    ...
 	jmp	L0065		;; 0062: c3 65 00    .e.
@@ -184,7 +197,7 @@ L0065:	mvi	a,0c3h		;; 0065: 3e c3       >.
 	sta	conin		;; 0067: 32 4f ff    2O.
 	sta	conout		;; 006a: 32 52 ff    2R.
 	in	PP_B		;; 006d: db 01       ..
-	ani	CON_SER	; console is serial port?
+	ani	CFG_SER	; console is serial port?
 	jrnz	L00bc		;; 0071: 20 49        I
 	; setup Z80-CTC... CRT... 
 	mvi	a,LOW intv0	;; 0073: 3e f0       >.
@@ -203,13 +216,13 @@ L0065:	mvi	a,0c3h		;; 0065: 3e c3       >.
 	lxi	h,kbdin		;; 008c: 21 b6 02    ...
 	shld	conin+1		;; 008f: 22 50 ff    "P.
 	in	PP_B		;; 0092: db 01       ..
-	ani	KBD_SER		;; 0094: e6 08       ..
+	ani	CFG_PCK		;; 0094: e6 08       ..
 	lxi	d,04f83h	;; 0096: 11 83 4f    ..O
 	jrz	L00ad		;; 0099: 28 12       (.
-	; serial keyboard?
+	; init parallel keyboard on i8255 chC
 	out	INT_RST		;; 009b: d3 4f       .O
 	in	PP_C		;; 009d: db 02       ..
-	ori	002h	; serial kbd on
+	ori	PPC_KRS		; serial kbd on
 	out	PP_C		;; 00a1: d3 02       ..
 	; i8255 keyboard intr via Z80-CTC ch2
 	mvi	a,0cfh	; reset, TC, TRG, falling, ctr, EI
@@ -218,7 +231,7 @@ L0065:	mvi	a,0c3h		;; 0065: 3e c3       >.
 	out	CTC_2		;; 00a9: d3 22       ."
 	jr	L00d8		;; 00ab: 18 2b       .+
 
-; init parallel keyboard
+; init parallel keyboard on PIO chA
 L00ad:	lxi	b,((LOW intv4) shl 8)+PIO_AC
 	outp	d	; 04fh - mode 1: input
 	outp	b	; 0f8h - intr vect: LOW L07f8...
@@ -293,7 +306,7 @@ L0183:	xra	a		;; 0183: af          .
 	mvi	c,45		;; 0187: 0e 2d       .-
 	call	fill	; fill 0ff5bh with 45 "00"
 	in	PP_B		;; 018c: db 01       ..
-	ani	CON_SER	; serial console?
+	ani	CFG_SER	; serial console?
 	rnz		; skip if serial
 L0191:	mvi	a,004h	; 320x200, off, validate RAM, graph, 40x25
 	out	CRT_CTL		;; 0193: d3 4a       .J
@@ -313,7 +326,7 @@ L0191:	mvi	a,004h	; 320x200, off, validate RAM, graph, 40x25
 	jmp	L02ee		;; 01a8: c3 ee 02    ...
 
 ; Beep the speaker and halt
-die:	mvi	a,0c1h	; i8253 on, spkr, RAM
+die:	mvi	a,PPC_SPK+PPC_ROM	; i8253 on, spkr, ROM
 	out	PP_C		;; 01ad: d3 02       ..
 	lxi	b,0		;; 01af: 01 00 00    ...
 	mvi	a,5		;; 01b2: 3e 05       >.
@@ -322,7 +335,7 @@ L01b4:	dcr	c		;; 01b4: 0d          .
 	djnz	L01b4		;; 01b7: 10 fb       ..
 	dcr	a		;; 01b9: 3d          =
 	jrnz	L01b4		;; 01ba: 20 f8        .
-	mvi	a,001h	; i8253 off, RAM
+	mvi	a,PPC_ROM	; i8253 off, RAM
 	out	PP_C		;; 01be: d3 02       ..
 L01c0:	jr	L01c0		;; 01c0: 18 fe       ..
 
@@ -359,7 +372,7 @@ L01e1:	lxi	h,L0210		;; 01e1: 21 10 02    ...
 L01e8:	lxi	h,L0218		;; 01e8: 21 18 02    ...
 	mvi	b,008h		;; 01eb: 06 08       ..
 L01ed:	in	PP_C		;; 01ed: db 02       ..
-	ori	0c0h	; i8253, spkr on
+	ori	PPC_SPK	; i8253, spkr on
 	out	PP_C		;; 01f1: d3 02       ..
 L01f3:	mov	a,m		;; 01f3: 7e          ~
 	out	CTR_2		;; 01f4: d3 72       .r
@@ -370,7 +383,7 @@ L01f3:	mov	a,m		;; 01f3: 7e          ~
 	call	delay		;; 01fb: cd 07 02    ...
 	djnz	L01f3		;; 01fe: 10 f3       ..
 	in	PP_C		;; 0200: db 02       ..
-	ani	03fh	; i8253/spkr off
+	ani	(NOT PPC_SPK) AND 0ffh	; i8253/spkr off
 	out	PP_C		;; 0204: d3 02       ..
 	ret			;; 0206: c9          .
 
@@ -560,7 +573,7 @@ L0359:	sta	fdccmd		;; 0359: 32 68 ff    2h.
 	cpi	07fh		;; 036b: fe 7f       ..
 	jnz	L0408		;; 036d: c2 08 04    ...
 	in	PP_B		;; 0370: db 01       ..
-	ani	DRV0_8		;; 0372: e6 01       ..
+	ani	CFG_801		;; 0372: e6 01       ..
 	lda	fdcfmt		;; 0374: 3a 77 ff    :w.
 	lxi	h,fd5len	;; 0377: 21 e5 03    ...
 	jz	L0380		;; 037a: ca 80 03    ...
@@ -685,7 +698,7 @@ L0492:	lda	fdcres+4	;; 0492: 3a 6d ff    :m.
 	sta	0ff5dh		;; 0497: 32 5d ff    2].
 	jnz	L06f3		;; 049a: c2 f3 06    ...
 	in	PP_B		;; 049d: db 01       ..
-	ani	DRV0_8		;; 049f: e6 01       ..
+	ani	CFG_801		;; 049f: e6 01       ..
 	jnz	L06f3		;; 04a1: c2 f3 06    ...
 	mvi	a,004h		;; 04a4: 3e 04       >.
 	sta	fdcfmt		;; 04a6: 32 77 ff    2w.
@@ -693,7 +706,7 @@ L0492:	lda	fdcres+4	;; 0492: 3a 6d ff    :m.
 
 L04ac:	sta	fdcfmt		;; 04ac: 32 77 ff    2w.
 	in	PP_B		;; 04af: db 01       ..
-	ani	DRV0_8		;; 04b1: e6 01       ..
+	ani	CFG_801		;; 04b1: e6 01       ..
 	lda	fdcfmt		;; 04b3: 3a 77 ff    :w.
 	jz	L04de		;; 04b6: ca de 04    ...
 	ora	a		;; 04b9: b7          .
@@ -987,7 +1000,7 @@ L06cc:	call	print		;; 06cc: cd c8 01    ...
 	jmp	L012b		;; 06f0: c3 2b 01    .+.
 
 L06f3:	in	PP_B		;; 06f3: db 01       ..
-	ani	DRV0_8		;; 06f5: e6 01       ..
+	ani	CFG_801		;; 06f5: e6 01       ..
 	jnz	L06fd		;; 06f7: c2 fd 06    ...
 	call	L06fd		;; 06fa: cd fd 06    ...
 L06fd:	xra	a		;; 06fd: af          .
@@ -1034,11 +1047,11 @@ L072d:	lda	fdccmd		;; 072d: 3a 68 ff    :h.
 L0749:	xra	a		;; 0749: af          .
 	out	FDC_CTL		;; 074a: d3 48       .H
 	in	PP_B		;; 074c: db 01       ..
-	ani	DRV0_8	; option... 8" or 5"?
+	ani	CFG_801	; option... 8" or 5"?
 	di			;; 0750: f3          .
 	jz	L0769		;; 0751: ca 69 07    .i.
 	; 8" drive boot
-	mvi	a,020h		;; 0754: 3e 20       > 
+	mvi	a,020h	; FDC_RST
 	out	FDC_CTL		;; 0756: d3 48       .H
 	mvi	a,003h	; SPECIFY command...
 	call	fdcbeg		;; 075a: cd 25 05    .%.
@@ -1050,7 +1063,7 @@ L0764:	call	fdcout		;; 0764: cd 32 05    .2.
 	ret			;; 0768: c9          .
 
 ; 5.25" drive boot
-L0769:	mvi	a,033h		;; 0769: 3e 33       >3
+L0769:	mvi	a,033h	; FDC_RST+FDC_5IN+MTR_DS0+MTR_DS1
 	out	FDC_CTL		;; 076b: d3 48       .H
 	mvi	a,003h	; SPECIFY command...
 	call	fdcbeg		;; 076f: cd 25 05    .%.
