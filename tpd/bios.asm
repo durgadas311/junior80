@@ -39,9 +39,21 @@ PIO1_A	equ	2ch	; PC keyboard (scan codes)
 PIO1_B	equ	2dh
 PIO1_AC	equ	2eh
 PIO1_BC	equ	2fh
+;
+DMA_0A	equ	30h	; ch0 addr
+DMA_0C	equ	31h	; ch0 count (-1)
+DMA_1A	equ	32h	; ch1 addr
+DMA_1C	equ	33h	; ch1 count (-1)
+DMA_2A	equ	34h	; ch2 addr
+DMA_2C	equ	35h	; ch2 count (-1)
+DMA_3A	equ	36h	; ch3 addr
+DMA_3C	equ	37h	; ch3 count (-1)
+DMA_CTL	equ	38h	;
+
 ; FDC - same as Jr80?
 FDC_STS	equ	40h
 FDC_DAT	equ	41h
+FDC_CTL	equ	42h
 ; same as Jr80?
 PIO_A	equ	50h	; input - ASCII keyboard
 PIO_B	equ	51h	; output
@@ -61,6 +73,8 @@ FF	equ	12
 CR	equ	13
 SO	equ	14
 SI	equ	15
+XON	equ	17
+XOFF	equ	19
 NAK	equ	21
 SYN	equ	22
 ETB	equ	23
@@ -325,11 +339,11 @@ Le006:	lxi	h,fd8fm0		;; e006: 21 e7 e7    ...
 	call	Le06f		;; e024: cd 6f e0    .o.
 	di			;; e027: f3          .
 	mvi	b,003h		;; e028: 06 03       ..
-	call	Le728		;; e02a: cd 28 e7    .(.
+	call	fdcbeg		;; e02a: cd 28 e7    .(.
 	mvi	b,06fh		;; e02d: 06 6f       .o
-	call	Le72f		;; e02f: cd 2f e7    ./.
+	call	fdcout		;; e02f: cd 2f e7    ./.
 	mvi	b,02eh		;; e032: 06 2e       ..
-	call	Le72f		;; e034: cd 2f e7    ./.
+	call	fdcout		;; e034: cd 2f e7    ./.
 	jmp	Le6a7		;; e037: c3 a7 e6    ...
 
 Le03a:	lxi	h,fd5fm0		;; e03a: 21 7c e8    .|.
@@ -346,22 +360,22 @@ Le03a:	lxi	h,fd5fm0		;; e03a: 21 7c e8    .|.
 	call	Le06f		;; e059: cd 6f e0    .o.
 	di			;; e05c: f3          .
 	mvi	b,003h		;; e05d: 06 03       ..
-	call	Le728		;; e05f: cd 28 e7    .(.
+	call	fdcbeg		;; e05f: cd 28 e7    .(.
 	mvi	b,0cfh		;; e062: 06 cf       ..
-	call	Le72f		;; e064: cd 2f e7    ./.
+	call	fdcout		;; e064: cd 2f e7    ./.
 	mvi	b,002h		;; e067: 06 02       ..
-	call	Le72f		;; e069: cd 2f e7    ./.
+	call	fdcout		;; e069: cd 2f e7    ./.
 	jmp	Le6a7		;; e06c: c3 a7 e6    ...
 
 Le06f:	lda	Lde6f		;; e06f: 3a 6f de    :o.
-	ani	0cfh		;; e072: e6 cf       ..
-	out	042h		;; e074: d3 42       .B
+	ani	11001111b	;; e072: e6 cf       ..
+	out	FDC_CTL		;; e074: d3 42       .B
 	nop			;; e076: 00          .
 	nop			;; e077: 00          .
 	nop			;; e078: 00          .
 	ora	b		;; e079: b0          .
 	sta	Lde6f		;; e07a: 32 6f de    2o.
-	out	042h		;; e07d: d3 42       .B
+	out	FDC_CTL		;; e07d: d3 42       .B
 	ret			;; e07f: c9          .
 
 Le080:	lda	Lfcd8		;; e080: 3a d8 fc    :..
@@ -889,17 +903,17 @@ Le44f:	lda	Lfcfe		;; e44f: 3a fe fc    :..
 	di			;; e461: f3          .
 	lhld	Lfce7		;; e462: 2a e7 fc    *..
 	mov	a,l		;; e465: 7d          }
-	out	033h		;; e466: d3 33       .3
+	out	DMA_1C		;; e466: d3 33       .3
 	mov	a,c		;; e468: 79          y
 	ora	h		;; e469: b4          .
-	out	033h		;; e46a: d3 33       .3
+	out	DMA_1C		;; e46a: d3 33       .3
 	lhld	Lfce3		;; e46c: 2a e3 fc    *..
 	mov	a,l		;; e46f: 7d          }
-	out	032h		;; e470: d3 32       .2
+	out	DMA_1A		;; e470: d3 32       .2
 	mov	a,h		;; e472: 7c          |
-	out	032h		;; e473: d3 32       .2
+	out	DMA_1A		;; e473: d3 32       .2
 	mvi	a,042h		;; e475: 3e 42       >B
-	out	038h		;; e477: d3 38       .8
+	out	DMA_CTL		;; e477: d3 38       .8
 	ei			;; e479: fb          .
 	push	b		;; e47a: c5          .
 	mvi	c,008h		;; e47b: 0e 08       ..
@@ -1092,10 +1106,10 @@ Le640:	call	print		;; e640: cd 67 e6    .g.
 
 Le658:	di			;; e658: f3          .
 	mvi	b,004h		;; e659: 06 04       ..
-	call	Le728		;; e65b: cd 28 e7    .(.
+	call	fdcbeg		;; e65b: cd 28 e7    .(.
 	mov	b,c		;; e65e: 41          A
-	call	Le72f		;; e65f: cd 2f e7    ./.
-	call	Le739		;; e662: cd 39 e7    .9.
+	call	fdcout		;; e65f: cd 2f e7    ./.
+	call	fdcin		;; e662: cd 39 e7    .9.
 	ei			;; e665: fb          .
 	ret			;; e666: c9          .
 
@@ -1162,9 +1176,9 @@ Le6d2:	mvi	b,00fh		;; e6d2: 06 0f       ..
 
 Le6e1:	lxi	h,Lfcfe		;; e6e1: 21 fe fc    ...
 	di			;; e6e4: f3          .
-	call	Le728		;; e6e5: cd 28 e7    .(.
+	call	fdcbeg		;; e6e5: cd 28 e7    .(.
 Le6e8:	mov	b,m		;; e6e8: 46          F
-	call	Le72f		;; e6e9: cd 2f e7    ./.
+	call	fdcout		;; e6e9: cd 2f e7    ./.
 	inx	h		;; e6ec: 23          #
 	dcr	c		;; e6ed: 0d          .
 	jnz	Le6e8		;; e6ee: c2 e8 e6    ...
@@ -1203,20 +1217,22 @@ Le721:	ora	a		;; e721: b7          .
 	jz	Le006		;; e722: ca 06 e0    ...
 	jmp	Le03a		;; e725: c3 3a e0    .:.
 
-Le728:	in	040h		;; e728: db 40       .@
+; Begin FDC command sequence.
+fdcbeg:	in	FDC_STS		;; e728: db 40       .@
 	ani	01fh		;; e72a: e6 1f       ..
-	jnz	Le728		;; e72c: c2 28 e7    .(.
-Le72f:	in	040h		;; e72f: db 40       .@
+	jnz	fdcbeg		;; e72c: c2 28 e7    .(.
+; Send a byte to FDC.
+fdcout:	in	FDC_STS		;; e72f: db 40       .@
 	ral			;; e731: 17          .
-	jnc	Le72f		;; e732: d2 2f e7    ./.
+	jnc	fdcout		;; e732: d2 2f e7    ./.
 	mov	a,b		;; e735: 78          x
-	out	041h		;; e736: d3 41       .A
+	out	FDC_DAT		;; e736: d3 41       .A
 	ret			;; e738: c9          .
 
-Le739:	in	040h		;; e739: db 40       .@
+fdcin:	in	FDC_STS		;; e739: db 40       .@
 	ral			;; e73b: 17          .
-	jnc	Le739		;; e73c: d2 39 e7    .9.
-	in	041h		;; e73f: db 41       .A
+	jnc	fdcin		;; e73c: d2 39 e7    .9.
+	in	FDC_DAT		;; e73f: db 41       .A
 	ret			;; e741: c9          .
 
 Le742:	push	b		;; e742: c5          .
@@ -1243,7 +1259,7 @@ Le756:	inx	h		;; e756: 23          #
 	lda	Lde6f		;; e766: 3a 6f de    :o.
 	ora	c		;; e769: b1          .
 	sta	Lde6f		;; e76a: 32 6f de    2o.
-	out	042h		;; e76d: d3 42       .B
+	out	FDC_CTL		;; e76d: d3 42       .B
 	lxi	h,03a98h	;; e76f: 21 98 3a    ..:
 Le772:	dcx	h		;; e772: 2b          +
 	mov	a,h		;; e773: 7c          |
@@ -1413,19 +1429,19 @@ trn5m0:	db	1,5,9,13,2,6,10,14,3,7,11,15,4,8,12,16
 trn5m2:	db	0,4,8,3,7,2,6,1,5
 
 Le8e8:	push	psw
-	in	040h
+	in	FDC_STS
 	push	h
 	push	b
 	lxi	h,Lfcf0
 	ani	010h
 	jnz	Le90f	; FDC still busy...
 	mvi	b,008h
-	call	Le72f
+	call	fdcout
 	pop	b
-	call	Le739
+	call	fdcin
 	inx	h
 	mov	m,a
-	call	Le739
+	call	fdcin
 	mov	a,m
 	ani	020h
 	jz	Lea93
@@ -1437,7 +1453,7 @@ Le8e8:	push	psw
 Le90f:	mvi	m,001h
 	mvi	b,007h
 Le913:	inx	h
-	call	Le739
+	call	fdcin
 	mov	m,a
 	dcr	b
 	jnz	Le913
@@ -1538,7 +1554,7 @@ Le9ba:	rlcr	c		;; e9ba: cb 01       ..
 	dcr	b		;; e9bd: 05          .
 	jrnz	Le9ac		;; e9be: 20 ec        .
 	lda	Lde6f		;; e9c0: 3a 6f de    :o.
-	out	042h		;; e9c3: d3 42       .B
+	out	FDC_CTL		;; e9c3: d3 42       .B
 	mov	a,m		;; e9c5: 7e          ~
 	ora	a		;; e9c6: b7          .
 	jrz	Le9e7		;; e9c7: 28 1e       (.
@@ -1921,7 +1937,7 @@ Lec7b:	sspd	Leea5		;; ec7b: ed 73 a5 ee .s..
 	push	psw		;; ec82: f5          .
 	push	h		;; ec83: e5          .
 	push	b		;; ec84: c5          .
-	in	010h		;; ec85: db 10       ..
+	in	SIO_A		;; ec85: db 10       ..
 	lxi	h,Lfd21		;; ec87: 21 21 fd    ...
 	ana	m		;; ec8a: a6          .
 	mov	b,a		;; ec8b: 47          G
@@ -2000,13 +2016,13 @@ Led0f:	push	psw		;; ed0f: f5          .
 	ori	004h		;; ed13: f6 04       ..
 	sta	Lfd13		;; ed15: 32 13 fd    2..
 	mvi	a,030h		;; ed18: 3e 30       >0
-	out	012h		;; ed1a: d3 12       ..
-	in	010h		;; ed1c: db 10       ..
+	out	SIO_AC		;; ed1a: d3 12       ..
+	in	SIO_A		;; ed1c: db 10       ..
 	jr	Led25		;; ed1e: 18 05       ..
 
 Led20:	push	psw		;; ed20: f5          .
 	mvi	a,010h		;; ed21: 3e 10       >.
-	out	012h		;; ed23: d3 12       ..
+	out	SIO_AC		;; ed23: d3 12       ..
 Led25:	pop	psw		;; ed25: f1          .
 	ei			;; ed26: fb          .
 	reti			;; ed27: ed 4d       .M
@@ -2050,14 +2066,14 @@ Led61:	lxi	h,Lfd13		;; ed61: 21 13 fd    ...
 	ani	0fdh		;; ed68: e6 fd       ..
 	mov	m,a		;; ed6a: 77          w
 	mvi	c,011h		;; ed6b: 0e 11       ..
-Led6d:	in	012h		;; ed6d: db 12       ..
+Led6d:	in	SIO_AC		;; ed6d: db 12       ..
 	bit	5,a		;; ed6f: cb 6f       .o
 	stc			;; ed71: 37          7
 	rz			;; ed72: c8          .
 	ani	004h		;; ed73: e6 04       ..
 	jrz	Led6d		;; ed75: 28 f6       (.
 	mov	a,c		;; ed77: 79          y
-	out	010h		;; ed78: d3 10       ..
+	out	SIO_A		;; ed78: d3 10       ..
 	ret			;; ed7a: c9          .
 
 Led7b:	lda	Lfd13		;; ed7b: 3a 13 fd    :..
@@ -2074,7 +2090,7 @@ Led8d:	sspd	Leea5		;; ed8d: ed 73 a5 ee .s..
 	push	psw		;; ed95: f5          .
 	push	h		;; ed96: e5          .
 	push	b		;; ed97: c5          .
-	in	011h		;; ed98: db 11       ..
+	in	SIO_B		;; ed98: db 11       ..
 	lxi	h,Lfd25		;; ed9a: 21 25 fd    .%.
 	ana	m		;; ed9d: a6          .
 	mov	b,a		;; ed9e: 47          G
@@ -2083,9 +2099,9 @@ Led8d:	sspd	Leea5		;; ed8d: ed 73 a5 ee .s..
 	rrc			;; eda1: 0f          .
 	jrc	Ledb1		;; eda2: 38 0d       8.
 	mov	a,b		;; eda4: 78          x
-	cpi	011h		;; eda5: fe 11       ..
+	cpi	XON		;; eda5: fe 11       ..
 	jrz	Lede5		;; eda7: 28 3c       (<
-	cpi	013h		;; eda9: fe 13       ..
+	cpi	XOFF		;; eda9: fe 13       ..
 	jrz	Leddd		;; edab: 28 30       (0
 	ora	a		;; edad: b7          .
 	jz	Lecbe		;; edae: ca be ec    ...
@@ -2147,13 +2163,13 @@ Lee1d:	push	psw		;; ee1d: f5          .
 	ori	040h		;; ee21: f6 40       .@
 	sta	Lfd13		;; ee23: 32 13 fd    2..
 	mvi	a,030h		;; ee26: 3e 30       >0
-	out	013h		;; ee28: d3 13       ..
-	in	011h		;; ee2a: db 11       ..
+	out	SIO_BC		;; ee28: d3 13       ..
+	in	SIO_B		;; ee2a: db 11       ..
 	jmp	Led25		;; ee2c: c3 25 ed    .%.
 
 Lee2f:	push	psw		;; ee2f: f5          .
 	mvi	a,010h		;; ee30: 3e 10       >.
-	out	013h		;; ee32: d3 13       ..
+	out	SIO_BC		;; ee32: d3 13       ..
 	jmp	Led25		;; ee34: c3 25 ed    .%.
 
 Lee37:	ani	0bfh		;; ee37: e6 bf       ..
@@ -2195,14 +2211,14 @@ Lee6f:	lxi	h,Lfd13		;; ee6f: 21 13 fd    ...
 	ani	0dfh		;; ee76: e6 df       ..
 	mov	m,a		;; ee78: 77          w
 	mvi	c,011h		;; ee79: 0e 11       ..
-Lee7b:	in	013h		;; ee7b: db 13       ..
+Lee7b:	in	SIO_BC		;; ee7b: db 13       ..
 	bit	5,a		;; ee7d: cb 6f       .o
 	stc			;; ee7f: 37          7
 	rz			;; ee80: c8          .
 	ani	004h		;; ee81: e6 04       ..
 	jrz	Lee7b		;; ee83: 28 f6       (.
 	mov	a,c		;; ee85: 79          y
-	out	011h		;; ee86: d3 11       ..
+	out	SIO_B		;; ee86: d3 11       ..
 	ret			;; ee88: c9          .
 
 Lee89:	lda	Lfd13		;; ee89: 3a 13 fd    :..
@@ -3182,7 +3198,7 @@ Lf5ce:	stax	d		;; f5ce: 12          .
 
 Lf5d5:	di			;; f5d5: f3          .
 	xra	a		;; f5d6: af          .
-	out	038h		;; f5d7: d3 38       .8
+	out	DMA_CTL		;; f5d7: d3 38       .8
 	lxi	sp,00100h	;; f5d9: 31 00 01    1..
 	im2			;; f5dc: ed 5e       .^
 	mvi	a,HIGH Lde70	;; f5de: 3e de       >.
