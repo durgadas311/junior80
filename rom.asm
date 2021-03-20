@@ -898,10 +898,10 @@ L05b7:	lxi	h,fdcbuf	;; 05b7: 21 5e ff    .^.
 	out	DMA_1A		;; 05cc: d3 32       .2
 	mov	a,h		;; 05ce: 7c          |
 	out	DMA_1A		;; 05cf: d3 32       .2
-	mvi	a,042h		;; 05d1: 3e 42       >B
+	mvi	a,042h	; TC stop, ch 1 ena
 	out	DMA_CTL		;; 05d3: d3 38       .8
 	pop	h		;; 05d5: e1          .
-	mvi	c,008h		;; 05d6: 0e 08       ..
+	mvi	c,8		;; 05d6: 0e 08       ..
 	call	L0571		;; 05d8: cd 71 05    .q.
 	jc	L05b7		;; 05db: da b7 05    ...
 	rz			;; 05de: c8          .
@@ -1051,25 +1051,25 @@ L0749:	xra	a		;; 0749: af          .
 	di			;; 0750: f3          .
 	jz	L0769		;; 0751: ca 69 07    .i.
 	; 8" drive boot
-	mvi	a,020h	; FDC_RST
+	mvi	a,FDC_RST
 	out	FDC_CTL		;; 0756: d3 48       .H
 	mvi	a,003h	; SPECIFY command...
 	call	fdcbeg		;; 075a: cd 25 05    .%.
-	mvi	a,06fh	; step rate/head load
+	mvi	a,06fh	; SRT=6, HUT=15
 	call	fdcout		;; 075f: cd 32 05    .2.
-	mvi	a,02eh	; head load time/non-DMA
+	mvi	a,02eh	; HLT=23, ND=0
 L0764:	call	fdcout		;; 0764: cd 32 05    .2.
 	ei			;; 0767: fb          .
 	ret			;; 0768: c9          .
 
 ; 5.25" drive boot
-L0769:	mvi	a,033h	; FDC_RST+FDC_5IN+MTR_DS0+MTR_DS1
+L0769:	mvi	a,FDC_RST+FDC_5IN+MTR_DS0+MTR_DS1
 	out	FDC_CTL		;; 076b: d3 48       .H
 	mvi	a,003h	; SPECIFY command...
 	call	fdcbeg		;; 076f: cd 25 05    .%.
-	mvi	a,00fh	; step rate/head load
+	mvi	a,00fh	; SRT=0, HUT=15
 	call	fdcout		;; 0774: cd 32 05    .2.
-	mvi	a,026h	; head load time/non-DMA
+	mvi	a,026h	; HLT=19, ND=0
 	jmp	L0764		;; 0779: c3 64 07    .d.
 
 ; FDC completion?

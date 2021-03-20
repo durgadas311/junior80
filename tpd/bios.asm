@@ -66,6 +66,10 @@ CRT_CTL	equ	62h
 CRT_HUE	equ	63h	; how used?
 CRT_ROW	equ	64h	; new - how used? 'top' for scrolling?
 
+; DMAC count reg high bits
+DMA_RD	equ	80h
+DMA_WR	equ	40h
+
 ; FDC_CTL port bits - same as Jr80
 FDC_RST	equ	20h	; /RESET to i8272 (0=RESET)
 FDC_5IN	equ	10h	; 5.25" drive type enable
@@ -146,7 +150,7 @@ wboote:	jmp	wboot		;; de03: c3 e3 de    ...
 	db	'Tpd 2.7/1 A'
 	dw	Lfd0d	; floppy motor timers
 
-	jmp	Le658		;; de42: c3 58 e6    .X.
+	jmp	fdsens		;; de42: c3 58 e6    .X.
 	jmp	Lea12		;; de45: c3 12 ea    ...
 	jmp	Le97e		;; de48: c3 7e e9    .~.
 	jmp	Lf523		;; de4b: c3 23 f5    .#.
@@ -180,7 +184,7 @@ Lde86:	dw	Lf0da	; xx86 - CTC1 ch3 - video?
 	dw	nulint	; xx88 - CTC2 ch0
 	dw	nulint	; xx8a - CTC2 ch1
 	dw	nulint	; xx8c - CTC2 ch2
-	dw	Le8e8	; xx8e - CTC2 ch3 FDC
+	dw	fdcint	; xx8e - CTC2 ch3 FDC
 	dw	pckbint	; xx90 - PIO1 chA - PC keyboard (scan codes)
 	dw	nulint	; xx92
 	dw	akbint	; xx94 - PIO chA - ASCII keyboard
@@ -331,7 +335,7 @@ Ldf9d:	lxi	d,dphtbl	;; df9d: 11 7a e7    .z.
 	mov	l,a		;; dfa5: 6f          o
 	mvi	h,0		;; dfa6: 26 00       &.
 	dad	d		;; dfa8: 19          .
-	shld	Lfcd9		;; dfa9: 22 d9 fc    "..
+	shld	curdph		;; dfa9: 22 d9 fc    "..
 	lxi	d,16		;; dfac: 11 10 00    ...
 	dad	d		;; dfaf: 19          .
 	mvi	a,004h		;; dfb0: 3e 04       >.
@@ -344,7 +348,7 @@ Ldf9d:	lxi	d,dphtbl	;; df9d: 11 7a e7    .z.
 Ldfbd:	mov	a,m		;; dfbd: 7e          ~
 	sta	Lfcdb		;; dfbe: 32 db fc    2..
 	call	Le080		;; dfc1: cd 80 e0    ...
-	lhld	Lfcd9		;; dfc4: 2a d9 fc    *..
+	lhld	curdph		;; dfc4: 2a d9 fc    *..
 	lda	Lfd09		;; dfc7: 3a 09 fd    :..
 	ora	a		;; dfca: b7          .
 	jz	Ldfd9		;; dfcb: ca d9 df    ...
@@ -360,7 +364,7 @@ Ldfd9:	sta	Lfd0b		;; dfd9: 32 0b fd    2..
 Ldfde:	mov	a,m		;; dfde: 7e          ~
 	sta	curdsk		;; dfdf: 32 e0 fc    2..
 	sta	Lfcdb		;; dfe2: 32 db fc    2..
-	lhld	Lfcd9		;; dfe5: 2a d9 fc    *..
+	lhld	curdph		;; dfe5: 2a d9 fc    *..
 	ret			;; dfe8: c9          .
 
 Ldfe9:	lda	Lfcfd		;; dfe9: 3a fd fc    :..
@@ -392,11 +396,11 @@ Le006:	lxi	h,fd8fm0		;; e006: 21 e7 e7    ...
 	mvi	b,FDC_RST	; release i8272 RESET, 8" drives
 	call	Le06f		;; e024: cd 6f e0    .o.
 	di			;; e027: f3          .
-	mvi	b,003h		;; e028: 06 03       ..
+	mvi	b,003h	; SPECIFY command
 	call	fdcbeg		;; e02a: cd 28 e7    .(.
-	mvi	b,06fh		;; e02d: 06 6f       .o
+	mvi	b,06fh	; SRT=6, HUT=15
 	call	fdcout		;; e02f: cd 2f e7    ./.
-	mvi	b,02eh		;; e032: 06 2e       ..
+	mvi	b,02eh	; HLT=23, ND=0 (DMA on?)
 	call	fdcout		;; e034: cd 2f e7    ./.
 	jmp	Le6a7		;; e037: c3 a7 e6    ...
 
@@ -414,11 +418,11 @@ Le03a:	lxi	h,fd5fm0		;; e03a: 21 7c e8    .|.
 	mvi	b,FDC_RST+FDC_5IN	; release i8272 RESET, 5.25" drives
 	call	Le06f		;; e059: cd 6f e0    .o.
 	di			;; e05c: f3          .
-	mvi	b,003h		;; e05d: 06 03       ..
+	mvi	b,003h	; SPECIFY command
 	call	fdcbeg		;; e05f: cd 28 e7    .(.
-	mvi	b,0cfh		;; e062: 06 cf       ..
+	mvi	b,0cfh	; SRT=12, HUT=15
 	call	fdcout		;; e064: cd 2f e7    ./.
-	mvi	b,002h		;; e067: 06 02       ..
+	mvi	b,002h	; HLT=1, ND=0 (DMA on?)
 	call	fdcout		;; e069: cd 2f e7    ./.
 	jmp	Le6a7		;; e06c: c3 a7 e6    ...
 
@@ -438,23 +442,24 @@ Le06f:	lda	Lde6f		;; e06f: 3a 6f de    :o.
 Le080:	lda	Lfcd8		;; e080: 3a d8 fc    :..
 	mov	e,a		;; e083: 5f          _
 	mvi	d,000h		;; e084: 16 00       ..
-	lda	Lfcfe		;; e086: 3a fe fc    :..
-	ani	003h		;; e089: e6 03       ..
+	lda	fdcbuf		;; e086: 3a fe fc    :..
+	ani	003h	; old DS1/DS0
 	cmp	e		;; e08b: bb          .
 	jz	Le0a6		;; e08c: ca a6 e0    ...
+	; different drive - do select
 	push	d		;; e08f: d5          .
-	lxi	h,Lfcf8		;; e090: 21 f8 fc    ...
+	lxi	h,savtrk	;; e090: 21 f8 fc    ...
 	mov	e,a		;; e093: 5f          _
 	dad	d		;; e094: 19          .
-	lda	Lfcff		;; e095: 3a ff fc    :..
-	mov	m,a		;; e098: 77          w
-	lxi	h,Lfcf8		;; e099: 21 f8 fc    ...
+	lda	fdcbuf+1	;; e095: 3a ff fc    :..
+	mov	m,a	; save old drive track num
+	lxi	h,savtrk	;; e099: 21 f8 fc    ...
 	pop	d		;; e09c: d1          .
 	dad	d		;; e09d: 19          .
-	mov	a,m		;; e09e: 7e          ~
-	sta	Lfcff		;; e09f: 32 ff fc    2..
+	mov	a,m	; restore new drive track num
+	sta	fdcbuf+1	;; e09f: 32 ff fc    2..
 	mov	a,e		;; e0a2: 7b          {
-	sta	Lfcfe		;; e0a3: 32 fe fc    2..
+	sta	fdcbuf	; new DS1/DS0 value
 Le0a6:	lda	Lfcdb		;; e0a6: 3a db fc    :..
 	cpi	0ffh		;; e0a9: fe ff       ..
 	jz	Le0f0		;; e0ab: ca f0 e0    ...
@@ -462,18 +467,18 @@ Le0ae:	lxi	h,curdsk		;; e0ae: 21 e0 fc    ...
 	cmp	m		;; e0b1: be          .
 	jz	Le0e0		;; e0b2: ca e0 e0    ...
 	mov	m,a		;; e0b5: 77          w
-Le0b6:	lxi	d,Lfd02		;; e0b6: 11 02 fd    ...
+Le0b6:	lxi	d,fdcbuf+4	;; e0b6: 11 02 fd    ...
 Le0b9:	lxi	h,fd8fm0	; replaced with current format
 	mvi	b,006h		;; e0bc: 06 06       ..
 	ora	a		;; e0be: b7          .
 	jz	Le0d4		;; e0bf: ca d4 e0    ...
-Le0c2:	lxi	h,fd8fm3		;; e0c2: 21 df e7    ...
+Le0c2:	lxi	h,fd8fm3	;; e0c2: 21 df e7    ...
 	cpi	003h		;; e0c5: fe 03       ..
 	jz	Le0d4		;; e0c7: ca d4 e0    ...
-Le0ca:	lxi	h,fd8fm1		;; e0ca: 21 cf e7    ...
+Le0ca:	lxi	h,fd8fm1	;; e0ca: 21 cf e7    ...
 	rar			;; e0cd: 1f          .
 	jc	Le0d4		;; e0ce: da d4 e0    ...
-Le0d1:	lxi	h,fd8fm2		;; e0d1: 21 d7 e7    ...
+Le0d1:	lxi	h,fd8fm2	;; e0d1: 21 d7 e7    ...
 Le0d4:	mov	a,m		;; e0d4: 7e          ~
 	stax	d		;; e0d5: 12          .
 	inx	h		;; e0d6: 23          #
@@ -517,14 +522,14 @@ Le0fd:	lxi	b,00002h	;; e0fd: 01 02 00    ...
 	call	Le17d		;; e12b: cd 7d e1    .}.
 	jz	Le138		;; e12e: ca 38 e1    .8.
 	lxi	h,0		;; e131: 21 00 00    ...
-	shld	Lfcd9		;; e134: 22 d9 fc    "..
+	shld	curdph		;; e134: 22 d9 fc    "..
 	ret			;; e137: c9          .
 
 Le138:	xra	a		;; e138: af          .
 	sta	curtrk		;; e139: 32 de fc    2..
 	call	Le6a7		;; e13c: cd a7 e6    ...
-	lhld	Lfcd9		;; e13f: 2a d9 fc    *..
-	lxi	d,0000ah	;; e142: 11 0a 00    ...
+	lhld	curdph		;; e13f: 2a d9 fc    *..
+	lxi	d,10		;; e142: 11 0a 00    ...
 	dad	d		;; e145: 19          .
 	xchg			;; e146: eb          .
 	lhld	Lfcdc		;; e147: 2a dc fc    *..
@@ -536,17 +541,18 @@ Le138:	xra	a		;; e138: af          .
 	mov	a,m		;; e14f: 7e          ~
 	stax	d		;; e150: 12          .
 	mov	b,a		;; e151: 47          G
-	ldax	b		;; e152: 0a          .
-	cpi	'$'		;; e153: fe 24       .$
+	ldax	b	; DPB.SPT
+	cpi	36	; dpb5m2?
 	jnz	Le171		;; e155: c2 71 e1    .q.
-	lda	Lfcf0+4		;; e158: 3a f4 fc    :..
+	lda	fdcres+4	; C (track) number?
 	ora	a		;; e15b: b7          .
 	jz	Le0fd		;; e15c: ca fd e0    ...
 	sui	002h		;; e15f: d6 02       ..
 	jnz	Le171		;; e161: c2 71 e1    .q.
+	; special handling for dpb5m2...
 	mov	l,e		;; e164: 6b          k
 	mov	h,d		;; e165: 62          b
-	lxi	b,Le8a2		;; e166: 01 a2 e8    ...
+	lxi	b,dpb5mZ		;; e166: 01 a2 e8    ...
 	mov	m,b		;; e169: 70          p
 	dcx	h		;; e16a: 2b          +
 	mov	m,c		;; e16b: 71          q
@@ -561,13 +567,13 @@ Le171:	lxi	h,00005h	;; e171: 21 05 00    ...
 
 Le17d:	lda	Lfd07		;; e17d: 3a 07 fd    :..
 	ani	040h		;; e180: e6 40       .@
-	ori	00ah		;; e182: f6 0a       ..
+	ori	00ah	; READ ID command + MFM
 	mov	b,a		;; e184: 47          G
-	mvi	c,001h		;; e185: 0e 01       ..
-	call	Le6e1		;; e187: cd e1 e6    ...
+	mvi	c,1		;; e185: 0e 01       ..
+	call	fdccmd		;; e187: cd e1 e6    ...
 	jc	Le17d		;; e18a: da 7d e1    .}.
 	rnz			;; e18d: c0          .
-	lxi	h,Lfcf0+7		;; e18e: 21 f7 fc    ...
+	lxi	h,fdcres+7	;; e18e: 21 f7 fc    ...
 	lda	curdsk		;; e191: 3a e0 fc    :..
 	cmp	m		;; e194: be          .
 	ret			;; e195: c9          .
@@ -592,7 +598,7 @@ setsec:	mov	a,c		;; e19f: 79          y
 	mvi	a,0		;; e1b6: 3e 00       >.
 	jc	Le1bd		;; e1b8: da bd e1    ...
 	mvi	a,1		;; e1bb: 3e 01       >.
-Le1bd:	sta	Lfd0c		;; e1bd: 32 0c fd    2..
+Le1bd:	sta	cursid		;; e1bd: 32 0c fd    2..
 	mov	a,c		;; e1c0: 79          y
 	ora	a		;; e1c1: b7          .
 	ret			;; e1c2: c9          .
@@ -719,12 +725,12 @@ Le268:	sta	wrflg		;; e268: 32 e5 fc    2..
 	call	Le3f5		;; e27b: cd f5 e3    ...
 	call	Le61d		;; e27e: cd 1d e6    ...
 	call	Le6bc		;; e281: cd bc e6    ...
-	lxi	h,0007fh	;; e284: 21 7f 00    ...
+	lxi	h,127		;; e284: 21 7f 00    ...
 	shld	Lfce7		;; e287: 22 e7 fc    "..
 	lda	cursec		;; e28a: 3a e1 fc    :..
-	sta	Lfd01		;; e28d: 32 01 fd    2..
-	lda	Lfd0c		;; e290: 3a 0c fd    :..
-	sta	Lfd00		;; e293: 32 00 fd    2..
+	sta	fdcbuf+3		;; e28d: 32 01 fd    2..
+	lda	cursid		;; e290: 3a 0c fd    :..
+	sta	fdcbuf+2		;; e293: 32 00 fd    2..
 	lda	wrflg		;; e296: 3a e5 fc    :..
 	ora	a		;; e299: b7          .
 	jz	Le43c		;; e29a: ca 3c e4    .<.
@@ -744,24 +750,24 @@ Le2b2:	shld	Lfce7		;; e2b2: 22 e7 fc    "..
 	lda	Lfce6		;; e2bc: 3a e6 fc    :..
 	cpi	002h		;; e2bf: fe 02       ..
 	jnz	Le2e1		;; e2c1: c2 e1 e2    ...
-	call	Le32c		;; e2c4: cd 2c e3    .,.
+	call	getdpb		;; e2c4: cd 2c e3    .,.
 	inx	h		;; e2c7: 23          #
 	inx	h		;; e2c8: 23          #
 	inx	h		;; e2c9: 23          #
 	mov	a,m		;; e2ca: 7e          ~
 	inr	a		;; e2cb: 3c          <
-	sta	Lfce9		;; e2cc: 32 e9 fc    2..
+	sta	curblm		;; e2cc: 32 e9 fc    2..
 	lda	Lfcd8		;; e2cf: 3a d8 fc    :..
 	sta	Lfcea		;; e2d2: 32 ea fc    2..
 	lhld	curtrk		;; e2d5: 2a de fc    *..
 	shld	Lfceb		;; e2d8: 22 eb fc    "..
 	lda	Lfce2		;; e2db: 3a e2 fc    :..
 	sta	Lfced		;; e2de: 32 ed fc    2..
-Le2e1:	lda	Lfce9		;; e2e1: 3a e9 fc    :..
+Le2e1:	lda	curblm		;; e2e1: 3a e9 fc    :..
 	ora	a		;; e2e4: b7          .
 	jz	Le338		;; e2e5: ca 38 e3    .8.
 	dcr	a		;; e2e8: 3d          =
-	sta	Lfce9		;; e2e9: 32 e9 fc    2..
+	sta	curblm		;; e2e9: 32 e9 fc    2..
 	lda	Lfcd8		;; e2ec: 3a d8 fc    :..
 	lxi	h,Lfcea		;; e2ef: 21 ea fc    ...
 	cmp	m		;; e2f2: be          .
@@ -781,20 +787,21 @@ Le2e1:	lda	Lfce9		;; e2e1: 3a e9 fc    :..
 	jnz	Le338		;; e30e: c2 38 e3    .8.
 	inr	m		;; e311: 34          4
 	mov	a,m		;; e312: 7e          ~
-	call	Le32c		;; e313: cd 2c e3    .,.
-	cmp	m		;; e316: be          .
+	call	getdpb		;; e313: cd 2c e3    .,.
+	cmp	m	; DPB.SPT
 	jc	Le325		;; e317: da 25 e3    .%.
+	; at end of track...
 	xra	a		;; e31a: af          .
 	sta	Lfced		;; e31b: 32 ed fc    2..
 	lhld	Lfceb		;; e31e: 2a eb fc    *..
-	inx	h		;; e321: 23          #
+	inx	h	; next track
 	shld	Lfceb		;; e322: 22 eb fc    "..
 Le325:	xra	a		;; e325: af          .
 	sta	Lfcee		;; e326: 32 ee fc    2..
 	jmp	Le340		;; e329: c3 40 e3    .@.
 
-Le32c:	lhld	Lfcd9		;; e32c: 2a d9 fc    *..
-	lxi	d,0000ah	;; e32f: 11 0a 00    ...
+getdpb:	lhld	curdph		;; e32c: 2a d9 fc    *..
+	lxi	d,10		;; e32f: 11 0a 00    ...
 	dad	d		;; e332: 19          .
 	mov	e,m		;; e333: 5e          ^
 	inx	h		;; e334: 23          #
@@ -803,7 +810,7 @@ Le32c:	lhld	Lfcd9		;; e32c: 2a d9 fc    *..
 	ret			;; e337: c9          .
 
 Le338:	xra	a		;; e338: af          .
-	sta	Lfce9		;; e339: 32 e9 fc    2..
+	sta	curblm		;; e339: 32 e9 fc    2..
 	inr	a		;; e33c: 3c          <
 	sta	Lfcee		;; e33d: 32 ee fc    2..
 Le340:	lda	Lfcdb		;; e340: 3a db fc    :..
@@ -824,7 +831,7 @@ Le35a:	ora	a		;; e35a: b7          .
 	rar			;; e35b: 1f          .
 	inr	a		;; e35c: 3c          <
 	mov	c,a		;; e35d: 4f          O
-	lda	Lfd0c		;; e35e: 3a 0c fd    :..
+	lda	cursid		;; e35e: 3a 0c fd    :..
 	mov	b,a		;; e361: 47          G
 	ora	a		;; e362: b7          .
 	jz	Le36a		;; e363: ca 6a e3    .j.
@@ -837,13 +844,13 @@ Le36a:	lda	Lfcd8		;; e36a: 3a d8 fc    :..
 	cmp	l		;; e371: bd          .
 	jnz	Le38d		;; e372: c2 8d e3    ...
 	lxi	h,curtrk		;; e375: 21 de fc    ...
-	lda	Lfcff		;; e378: 3a ff fc    :..
+	lda	fdcbuf+1		;; e378: 3a ff fc    :..
 	cmp	m		;; e37b: be          .
 	jnz	Le38d		;; e37c: c2 8d e3    ...
-	lda	Lfd00		;; e37f: 3a 00 fd    :..
+	lda	fdcbuf+2		;; e37f: 3a 00 fd    :..
 	cmp	b		;; e382: b8          .
 	jnz	Le38d		;; e383: c2 8d e3    ...
-	lda	Lfd01		;; e386: 3a 01 fd    :..
+	lda	fdcbuf+3		;; e386: 3a 01 fd    :..
 	cmp	c		;; e389: b9          .
 	jz	Le3b7		;; e38a: ca b7 e3    ...
 Le38d:	push	b		;; e38d: c5          .
@@ -851,7 +858,7 @@ Le38d:	push	b		;; e38d: c5          .
 	call	Le61d		;; e391: cd 1d e6    ...
 	call	Le6bc		;; e394: cd bc e6    ...
 	pop	b		;; e397: c1          .
-	lxi	h,Lfd01		;; e398: 21 01 fd    ...
+	lxi	h,fdcbuf+3		;; e398: 21 01 fd    ...
 	mov	m,c		;; e39b: 71          q
 	dcx	h		;; e39c: 2b          +
 	mov	m,b		;; e39d: 70          p
@@ -933,29 +940,31 @@ Le41e:	lda	cursec		;; e41e: 3a e1 fc    :..
 	lxi	d,Lf5d5		;; e42b: 11 d5 f5    ...
 	jmp	Le3d1		;; e42e: c3 d1 e3    ...
 
+; write operation
 Le431:	lda	Lfd06		;; e431: 3a 06 fd    :..
 	mov	b,a		;; e434: 47          G
-	mvi	c,080h		;; e435: 0e 80       ..
-	mvi	a,001h		;; e437: 3e 01       >.
+	mvi	c,DMA_RD	;; e435: 0e 80       ..
+	mvi	a,1		;; e437: 3e 01       >.
 	jmp	Le443		;; e439: c3 43 e4    .C.
 
+; read operation
 Le43c:	lda	Lfd07		;; e43c: 3a 07 fd    :..
 	mov	b,a		;; e43f: 47          G
-	mvi	c,040h		;; e440: 0e 40       .@
+	mvi	c,DMA_WR	;; e440: 0e 40       .@
 	xra	a		;; e442: af          .
 Le443:	sta	Lfcd6		;; e443: 32 d6 fc    2..
 Le446:	xra	a		;; e446: af          .
 	sta	Lfcef		;; e447: 32 ef fc    2..
 	mvi	a,010h		;; e44a: 3e 10       >.
 Le44c:	sta	Lfcd5		;; e44c: 32 d5 fc    2..
-Le44f:	lda	Lfcfe		;; e44f: 3a fe fc    :..
+Le44f:	lda	fdcbuf		;; e44f: 3a fe fc    :..
 	ani	003h		;; e452: e6 03       ..
 	mov	l,a		;; e454: 6f          o
-	lda	Lfd00		;; e455: 3a 00 fd    :..
+	lda	fdcbuf+2	;; e455: 3a 00 fd    :..
 	rlc			;; e458: 07          .
 	rlc			;; e459: 07          .
 	ora	l		;; e45a: b5          .
-	sta	Lfcfe		;; e45b: 32 fe fc    2..
+	sta	fdcbuf		;; e45b: 32 fe fc    2..
 	call	Le742		;; e45e: cd 42 e7    .B.
 	di			;; e461: f3          .
 	lhld	Lfce7		;; e462: 2a e7 fc    *..
@@ -969,23 +978,23 @@ Le44f:	lda	Lfcfe		;; e44f: 3a fe fc    :..
 	out	DMA_1A		;; e470: d3 32       .2
 	mov	a,h		;; e472: 7c          |
 	out	DMA_1A		;; e473: d3 32       .2
-	mvi	a,042h		;; e475: 3e 42       >B
+	mvi	a,042h	; TC stop, ch 1 ena
 	out	DMA_CTL		;; e477: d3 38       .8
 	ei			;; e479: fb          .
 	push	b		;; e47a: c5          .
 	mvi	c,008h		;; e47b: 0e 08       ..
-	call	Le6e1		;; e47d: cd e1 e6    ...
+	call	fdccmd		;; e47d: cd e1 e6    ...
 	pop	b		;; e480: c1          .
 	jc	Le44f		;; e481: da 4f e4    .O.
 	rz			;; e484: c8          .
 	push	b		;; e485: c5          .
-	lda	Lfcf0+1		;; e486: 3a f1 fc    :..
+	lda	fdcres+1	;; e486: 3a f1 fc    :..
 	ani	018h		;; e489: e6 18       ..
 	jz	Le492		;; e48b: ca 92 e4    ...
 	pop	b		;; e48e: c1          .
 	jmp	Le44f		;; e48f: c3 4f e4    .O.
 
-Le492:	lda	Lfcf0+3		;; e492: 3a f3 fc    :..
+Le492:	lda	fdcres+3	;; e492: 3a f3 fc    :..
 	ani	010h		;; e495: e6 10       ..
 	jz	Le4ab		;; e497: ca ab e4    ...
 	lda	Lfcef		;; e49a: 3a ef fc    :..
@@ -1000,7 +1009,7 @@ Le4ab:	pop	b		;; e4ab: c1          .
 	dcr	a		;; e4af: 3d          =
 	jp	Le44c		;; e4b0: f2 4c e4    .L.
 	call	Le67b		;; e4b3: cd 7b e6    .{.
-	lxi	h,Lfcf0+2		;; e4b6: 21 f2 fc    ...
+	lxi	h,fdcres+2	;; e4b6: 21 f2 fc    ...
 	mov	a,m		;; e4b9: 7e          ~
 	ani	080h		;; e4ba: e6 80       ..
 	jz	Le4cf		;; e4bc: ca cf e4    ...
@@ -1142,7 +1151,7 @@ Le61d:	lda	Lfcd8		;; e61d: 3a d8 fc    :..
 	sta	Lfcfc		;; e620: 32 fc fc    2..
 	ret			;; e623: c9          .
 
-Le624:	lda	Lfcfe		;; e624: 3a fe fc    :..
+Le624:	lda	fdcbuf		;; e624: 3a fe fc    :..
 	ani	003h		;; e627: e6 03       ..
 	adi	'A'		;; e629: c6 41       .A
 	sta	Le633		;; e62b: 32 33 e6    23.
@@ -1161,10 +1170,11 @@ Le640:	call	print		;; e640: cd 67 e6    .g.
 	cpi	003h		;; e655: fe 03       ..
 	ret			;; e657: c9          .
 
-Le658:	di			;; e658: f3          .
-	mvi	b,004h		;; e659: 06 04       ..
+; floppy drive SENSE, C=drive num
+fdsens:	di			;; e658: f3          .
+	mvi	b,4	; SENSE command
 	call	fdcbeg		;; e65b: cd 28 e7    .(.
-	mov	b,c		;; e65e: 41          A
+	mov	b,c	; drive select
 	call	fdcout		;; e65f: cd 2f e7    ./.
 	call	fdcin		;; e662: cd 39 e7    .9.
 	ei			;; e665: fb          .
@@ -1204,18 +1214,18 @@ Le69b:	call	print		;; e69b: cd 67 e6    .g.
 Le6a7:	call	Le6aa		;; e6a7: cd aa e6    ...
 Le6aa:	call	Le742		;; e6aa: cd 42 e7    .B.
 	xra	a		;; e6ad: af          .
-	sta	Lfcff		;; e6ae: 32 ff fc    2..
+	sta	fdcbuf+1		;; e6ae: 32 ff fc    2..
 	mvi	b,007h		;; e6b1: 06 07       ..
 	mvi	c,001h		;; e6b3: 0e 01       ..
-	call	Le6e1		;; e6b5: cd e1 e6    ...
+	call	fdccmd		;; e6b5: cd e1 e6    ...
 	jc	Le6aa		;; e6b8: da aa e6    ...
 	ret			;; e6bb: c9          .
 
 Le6bc:	call	Le742		;; e6bc: cd 42 e7    .B.
 	lda	curtrk		;; e6bf: 3a de fc    :..
-	lxi	h,Lfcff		;; e6c2: 21 ff fc    ...
+	lxi	h,fdcbuf+1	;; e6c2: 21 ff fc    ...
 	cmp	m		;; e6c5: be          .
-	rz			;; e6c6: c8          .
+	rz		; no SEEK needed
 	mov	e,a		;; e6c7: 5f          _
 	lda	Lfd0b		;; e6c8: 3a 0b fd    :..
 	ora	a		;; e6cb: b7          .
@@ -1223,15 +1233,17 @@ Le6bc:	call	Le742		;; e6bc: cd 42 e7    .B.
 	jz	Le6d1		;; e6cd: ca d1 e6    ...
 	rlc			;; e6d0: 07          .
 Le6d1:	mov	m,a		;; e6d1: 77          w
-Le6d2:	mvi	b,00fh		;; e6d2: 06 0f       ..
-	mvi	c,002h		;; e6d4: 0e 02       ..
-	call	Le6e1		;; e6d6: cd e1 e6    ...
+Le6d2:	mvi	b,00fh	; SEEK command
+	mvi	c,2		;; e6d4: 0e 02       ..
+	call	fdccmd		;; e6d6: cd e1 e6    ...
 	jc	Le6d2		;; e6d9: da d2 e6    ...
 	mov	a,e		;; e6dc: 7b          {
-	sta	Lfcff		;; e6dd: 32 ff fc    2..
+	sta	fdcbuf+1		;; e6dd: 32 ff fc    2..
 	ret			;; e6e0: c9          .
 
-Le6e1:	lxi	h,Lfcfe		;; e6e1: 21 fe fc    ...
+; B=command, fdcbuf=params, C=num params
+; returns NZ if error, CY if timeout
+fdccmd:	lxi	h,fdcbuf	;; e6e1: 21 fe fc    ...
 	di			;; e6e4: f3          .
 	call	fdcbeg		;; e6e5: cd 28 e7    .(.
 Le6e8:	mov	b,m		;; e6e8: 46          F
@@ -1243,19 +1255,20 @@ Le6e8:	mov	b,m		;; e6e8: 46          F
 	push	d		;; e6f2: d5          .
 	push	b		;; e6f3: c5          .
 	mvi	d,002h		;; e6f4: 16 02       ..
+	; wait for FDC intr - with timeout
 Le6f6:	lxi	b,0		;; e6f6: 01 00 00    ...
 Le6f9:	dcx	b		;; e6f9: 0b          .
 	mov	a,b		;; e6fa: 78          x
 	ora	c		;; e6fb: b1          .
 	jz	Le710		;; e6fc: ca 10 e7    ...
-	lxi	h,Lfcf0		;; e6ff: 21 f0 fc    ...
+	lxi	h,fdcres	;; e6ff: 21 f0 fc    ...
 	mov	a,m		;; e702: 7e          ~
 	ora	a		;; e703: b7          .
 	jz	Le6f9		;; e704: ca f9 e6    ...
-	mvi	m,000h		;; e707: 36 00       6.
+	mvi	m,0		;; e707: 36 00       6.
 	inx	h		;; e709: 23          #
 	mov	a,m		;; e70a: 7e          ~
-	ani	0c0h		;; e70b: e6 c0       ..
+	ani	0c0h	; ST0 intr code (00=normal)
 	pop	b		;; e70d: c1          .
 	pop	d		;; e70e: d1          .
 	ret			;; e70f: c9          .
@@ -1300,7 +1313,7 @@ Le742:	push	b		;; e742: c5          .
 	ora	a		;; e746: b7          .
 	jz	Le778		;; e747: ca 78 e7    .x.
 	lxi	h,Lfd0d-1	;; e74a: 21 0c fd    ...
-	lda	Lfcfe		;; e74d: 3a fe fc    :..
+	lda	fdcbuf		;; e74d: 3a fe fc    :..
 	ani	003h		;; e750: e6 03       ..
 	mov	c,a		;; e752: 4f          O
 	inr	c		;; e753: 0c          .
@@ -1344,10 +1357,10 @@ dph3:	dw	trn5m0,00000h,00000h,00000h,dirbuf,0000h,csv3,alv3
 	db	10h
 
 ; FDC parameters for 8" disks
-fd8fm1:	db	1
-	db	26
-	db	14
-	db	255
+fd8fm1:	db	1	; fdcbuf N
+	db	26	; fdcbuf EOT
+	db	14	; fdcbuf GPL
+	db	255	; fdcbuf DTL
 	db	45h	; WRITE command
 	db	46h	; READ command
 	dw	dpb8m1
@@ -1384,14 +1397,14 @@ dpb8m1:	dw	52
 	dw	2
 
 dpb8m2:	dw	64
-	db	4,0fh,0
+	db	4,15,0
 	dw	300-1,128-1
 	db	11000000b,0
 	dw	64
 	dw	2
 
 dpb8m3:	dw	64
-	db	4,0fh,0
+	db	4,15,0
 	dw	300-1,128-1
 	db	11000000b,0
 	dw	64
@@ -1464,8 +1477,8 @@ dpb5m2:	dw	36
 	dw	16
 	dw	2
 
-Le8a2:	dw	72
-	db	4,0fh,0
+dpb5mZ:	dw	72
+	db	4,15,0
 	dw	351-1,128-1
 	db	11000000b,0
 	dw	64
@@ -1489,37 +1502,38 @@ dpb5m3:	dw	40
 trn5m0:	db	1,5,9,13,2,6,10,14,3,7,11,15,4,8,12,16
 trn5m2:	db	0,4,8,3,7,2,6,1,5
 
-Le8e8:	push	psw
+; FDC completion interrupt
+fdcint:	push	psw
 	in	FDC_STS
 	push	h
 	push	b
-	lxi	h,Lfcf0
+	lxi	h,fdcres
 	ani	010h
-	jnz	Le90f	; FDC still busy...
-	mvi	b,008h
+	jnz	Le90f	; FDC still busy... has result...
+	mvi	b,8	; SENSE INTR
 	call	fdcout
 	pop	b
 	call	fdcin
 	inx	h
-	mov	m,a
-	call	fdcin
+	mov	m,a	; ST0
+	call	fdcin	; ignore PCN
 	mov	a,m
-	ani	020h
-	jz	Lea93
+	ani	020h	; SEEK END
+	jz	reti2
 	dcx	h
-	mvi	m,001h
-	jmp	Lea93
+	mvi	m,001h	; mark complete
+	jmp	reti2
 
 ; FDC still busy
 Le90f:	mvi	m,001h
-	mvi	b,007h
+	mvi	b,7
 Le913:	inx	h
 	call	fdcin
 	mov	m,a
 	dcr	b
 	jnz	Le913
 	pop	b
-	jmp	Lea93
+	jmp	reti2
 
 ; console input redirection
 Le920:	dw	Led37	; CON:=TTY:
@@ -1738,7 +1752,7 @@ akbint:	push	psw		;; ea86: f5          .
 	mvi	m,001h		;; ea8f: 36 01       6.
 	inx	h		;; ea91: 23          #
 	mov	m,a		;; ea92: 77          w
-Lea93:	pop	h		;; ea93: e1          .
+reti2:	pop	h		;; ea93: e1          .
 	pop	psw		;; ea94: f1          .
 nulint:	ei			;; ea95: fb          .
 	reti			;; ea96: ed 4d       .M
@@ -3337,9 +3351,9 @@ Lf5d5:	di			;; f5d5: f3          .
 	out	CTR_1		;; f621: d3 29       .)
 	mvi	a,0b6h	; ctr 2: LSB+MSB, mode 3, bin
 	out	CTR_C		;; f625: d3 2b       .+
-	mvi	a,0b7h	; count[2]=0x03b7=951 (1292 Hz?)
+	mvi	a,LOW 951	; count[2]=0x03b7=951 (1292 Hz?)
 	out	CTR_2		;; f629: d3 2a       .*
-	mvi	a,003h		;; f62b: 3e 03       >.
+	mvi	a,HIGH 951	;; f62b: 3e 03       >.
 	out	CTR_2		;; f62d: d3 2a       .*
 	;
 	mvi	a,089h	; A mode0 out, B mode0 out, C input
@@ -3615,10 +3629,10 @@ alv4:	ds	64	; ALV4
 csv4:	ds	64	; CSV4
 
 Lfcd5:	ds	1
-Lfcd6:	ds	1
+Lfcd6:	ds	1	; write flag (again?)
 Lfcd7:	ds	1
 Lfcd8:	ds	1
-Lfcd9:	ds	2
+curdph:	ds	2	; current drive's DPH
 Lfcdb:	ds	1
 Lfcdc:	ds	2
 curtrk:	ds	2
@@ -3629,31 +3643,28 @@ dmaadr:	ds	2
 wrflg:	ds	1	; 1=write disk
 Lfce6:	ds	1
 Lfce7:	ds	2
-Lfce9:	ds	1
-Lfcea:	ds	1
-Lfceb:	ds	2
-Lfced:	ds	1
+curblm:	ds	1	; DPB.BLM+1
+Lfcea:	ds	1	; Lfcd8
+Lfceb:	ds	2	; curtrk
+Lfced:	ds	1	; Lfce2
 Lfcee:	ds	1
 Lfcef:	ds	1
 
-; FDC results block?
-Lfcf0:	ds	8
+; FDC results block
+fdcres:	ds	8
 
-Lfcf8:	ds	4
+savtrk:	ds	4	; current track for each drive
 Lfcfc:	ds	1
 Lfcfd:	ds	1
-Lfcfe:	ds	1
-Lfcff:	ds	1
-Lfd00:	ds	1
-Lfd01:	ds	1
-Lfd02:	ds	4
-Lfd06:	ds	1
-Lfd07:	ds	1
+fdcbuf:	ds	8	; FDC parameter block, start with HDS/DS1/DS0
+Lfd06:	ds	1	; write command (from fdXfmY buffers)
+Lfd07:	ds	1	; read command (from fdXfmY buffers)
+
 Lfd08:	ds	1
 Lfd09:	ds	1	; drive type, 0=8"
 Lfd0a:	ds	1
-Lfd0b:	ds	1
-Lfd0c:	ds	1
+Lfd0b:	ds	1	; num sides
+cursid:	ds	1
 
 Lfd0d:	ds	4	; motor/access timeouts for each drive
 Lfd11:	ds	1
