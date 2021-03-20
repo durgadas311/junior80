@@ -54,8 +54,8 @@ CTR_2	equ	72h	; i8253 ch 2
 CTR_C	equ	73h	; i8253 ctrl
 
 ; i8255 B bits (dipsw)
-CFG_801	equ	00000001b	; drives 0,1 are 8"
-CFG_823	equ	00000010b	; drives 2,3 are 8"
+CFG_801	equ	00000001b	; 1 = drives 0,1 are 8"
+CFG_823	equ	00000010b	; 1 = drives 2,3 are 8"
 CFG_SER	equ	00000100b	; 1 = CON: is serial port
 CFG_PCK	equ	00001000b	; 1 = PC keyboard (scan codes)
 
