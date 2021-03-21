@@ -62,6 +62,7 @@ CFG_PCK	equ	00001000b	; 1 = PC keyboard (scan codes)
 ; i8257 count reg control bits
 DMA_RD	equ	80h	; read memory, write device
 DMA_WR	equ	40h	; write memory, read device
+DMA_FDC	equ	0010b	; DMA channel for FDC
 
 ; FDC_CTL port bits
 FDC_RST	equ	20h	; /RESET to i8272 (0=RESET)
@@ -898,7 +899,7 @@ L05b7:	lxi	h,fdcbuf	;; 05b7: 21 5e ff    .^.
 	out	DMA_1A		;; 05cc: d3 32       .2
 	mov	a,h		;; 05ce: 7c          |
 	out	DMA_1A		;; 05cf: d3 32       .2
-	mvi	a,042h	; TC stop, ch 1 ena
+	mvi	a,040h+DMA_FDC	; TC stop, FDC ch ena
 	out	DMA_CTL		;; 05d3: d3 38       .8
 	pop	h		;; 05d5: e1          .
 	mvi	c,8		;; 05d6: 0e 08       ..

@@ -70,6 +70,7 @@ CRT_ROW	equ	64h	; new - how used? 'top' for scrolling?
 ; DMAC count reg high bits
 DMA_RD	equ	80h
 DMA_WR	equ	40h
+DMA_FDC	equ	0010b	; DMA channel for FDC
 
 ; FDC_CTL port bits - same as Jr80
 FDC_RST	equ	20h	; /RESET to i8272 (0=RESET)
@@ -1008,7 +1009,7 @@ Le44f:	lda	fdcbuf		;; e44f: 3a fe fc    :..
 	out	DMA_1A		;; e470: d3 32       .2
 	mov	a,h		;; e472: 7c          |
 	out	DMA_1A		;; e473: d3 32       .2
-	mvi	a,042h	; TC stop, ch 1 ena
+	mvi	a,040h+DMA_FDC	; TC stop, FDC ch ena
 	out	DMA_CTL		;; e477: d3 38       .8
 	ei			;; e479: fb          .
 	push	b		;; e47a: c5          .
@@ -1351,7 +1352,7 @@ Le742:	push	b		;; e742: c5          .
 	ani	003h		;; e750: e6 03       ..
 	mov	c,a		;; e752: 4f          O
 	inr	c		;; e753: 0c          .
-	mvi	a,080h	; MTR_DS0 rrc 1
+	mvi	a,10000000b	; MTR_DS0 rrc 1
 Le756:	inx	h		;; e756: 23          #
 	rlc			;; e757: 07          .
 	dcr	c		;; e758: 0d          .
@@ -3391,7 +3392,7 @@ Lf5d5:	di			;; f5d5: f3          .
 	mvi	a,0dfh	; ei, ctr, rising, TC, reset
 	outp	a	;0dfh	;; f5f7: ed 79       .y
 	mvi	a,078h	; TC=120 - if CRT VB then 2 sec?
-	outp	a	;078h	;; f5fb: ed 79       .y
+	outp	a	; 120Hz? 60Hz? 50Hz?
 	inr	c	;CTC1_2
 	inr	c	;CTC1_3
 	inr	c	;CTC2_0
