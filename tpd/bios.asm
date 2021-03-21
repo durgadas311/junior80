@@ -112,17 +112,17 @@ LF	equ	10
 VT	equ	11
 FF	equ	12
 CR	equ	13
-SO	equ	14
-SI	equ	15
+SO	equ	14	; reverse video
+SI	equ	15	; normal video
 XON	equ	17
 DC1	equ	XON
 DC2	equ	18
 XOFF	equ	19
 DC3	equ	XOFF
 NAK	equ	21
-SYN	equ	22
+SYN	equ	22	; erase EOL
 ETB	equ	23
-CAN	equ	24
+CAN	equ	24	; clear screen
 EM	equ	25
 SUB	equ	26
 ESC	equ	27
