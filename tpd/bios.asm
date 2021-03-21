@@ -1,4 +1,5 @@
 ; Disassembly of TPD801.TD0 boot tracks, BIOS image.
+VERS	equ	270
 
 	maclib	z80
 
@@ -97,7 +98,12 @@ winlen	equ	8000h
 winend	equ	ramwin+winlen
 
 NIL	equ	0
+SOH	equ	1
 CTLC	equ	3
+ETX	equ	CTLC
+EOT	equ	4
+ENQ	equ	5
+ACK	equ	6
 BEL	equ	7
 BS	equ	8
 TAB	equ	9
@@ -108,7 +114,10 @@ CR	equ	13
 SO	equ	14
 SI	equ	15
 XON	equ	17
+DC1	equ	XON
+DC2	equ	18
 XOFF	equ	19
+DC3	equ	XOFF
 NAK	equ	21
 SYN	equ	22
 ETB	equ	23
@@ -116,6 +125,7 @@ CAN	equ	24
 EM	equ	25
 SUB	equ	26
 ESC	equ	27
+GS	equ	29
 DEL	equ	127
 
 ccp$pg	equ	0c800h
@@ -156,11 +166,20 @@ wboote:	jmp	wboot		;; de03: c3 e3 de    ...
 	jmp	sectrn		;; de30: c3 c3 e1    ...
 	; end of standard CP/M BIOS API
 
-	dw	extdat
-	db	'Tpd 2.7/1 A'	; 11-char ID string
-	dw	Lfd0d	; floppy motor timers
+	dw	extdat	; 0x33, wboote+48
+	; 11-char ID string
+	db	'Tpd '
+	db	((VERS/100) MOD 10)+'0'
+	db	'.'
+	db	((VERS/10) MOD 10)+'0'
+	db	'/'
+	db	(VERS MOD 10)+'1'
+	db	' A'
+	; floppy motor timers
+	dw	Lfd0d	; 0x40, wboote+61
 
-	jmp	fdsens		; perform FDC SENSE command on drive
+	; 0x42, wboote+63
+	jmp	fdsens		; FDC SENSE command, C=drive
 	jmp	ticset		; setup tick hook
 	jmp	rdrst		; RDR: input status
 	jmp	Lf523		; graphics routine - set/clear/get pixel
@@ -176,9 +195,10 @@ Lde51:	jmp	Leee7		; CRT mode 20h
 	jmp	nulfnc		;; de69: c3 68 df    .h.
 	jmp	ticfin		;; de6c: c3 46 ea    .F.
 
-Lde6f:	db	0	; port 042h image
+	; 0x6f, wboote+108
+Lde6f:	db	0	; FDC_CTL port image
 
-; interrupt vectors
+; interrupt vectors - 0x70, wboote+109 - use pointer below
 Lde70:	dw	nulint	; chB TxE
 	dw	bxtint	; chB Ext/sts change
 	dw	brxint	; chB RxA
@@ -200,27 +220,26 @@ Lde86:	dw	Lf0da	; xx86 - CTC1 ch3 - video?
 	dw	akbint	; xx94 - PIO chA - ASCII keyboard
 	dw	lptint	; xx96 - PIO chB - LPT: ready (intr)
 
-; extended data pointers
+; extended data pointers - 0x98, wboote+149
 extdat:	dw	Le920	; CON: input redir vectors
 	dw	Le928	; CON: output redir vectors
 	dw	Le948	; CON: input status redir
 	dw	Le930	; RDR: input redir vectors
 	dw	Le938	; PUN: output redir vectors
 	dw	Le940	; LST: output redir vectors
-	dw	tichook	; tick hook structure
+	dw	tichook	; tick hook structure - 0xa4, wboote+161
 	dw	Xfd1e	; external access to SIO data?
-
 Ldea8:	dw	rsxe	; RSX?
-
 	dw	Lde70	; interrupt vectors
 	dw	nulfnc
 	dw	Le950	; RDR: input status redir
-	dw	whooks	; warm boot hooks
-	dw	Lf518	; location of ptr to CRT RAM
+	dw	whooks	; warm boot hooks - 0xb0, wboote+173
+	dw	Lf518	; ptr to CRT RAM curr page - 0xb2, wboote+175
 	dw	0
 	dw	0
 	dw	Lf508	; hook 2 data? two words...
-	dw	010eh,0,0,0
+	dw	VERS	; version? 0xba, wboote+183
+	dw	0,0,0
 
 cboot:	lda	defiob		;; dec2: 3a 3b fd    :;.
 	sta	iobyte		;; dec5: 32 03 00    2..
@@ -1923,40 +1942,23 @@ Leb47:	dad	b		;; eb47: 09          .
 Leb4b:	db	ESC,81h,82h,83h,84h,85h,86h,87h,88h,89h,8ah,8bh,8ch,BS
 	db	TAB,'qwertyuiop',8dh,8eh,CR
 	db	NIL,'asdfghjkl',8fh,90h,91h,NIL
-	db	92h,'zxcvbnm',93h,94h,95h,NIL
-	db	96h,NIL,' ',NIL
-	; function keys...
-	db	13h	; 3B - F1
-	db	4	; 3C - F2
-	db	1	; 3D - F3
-	db	6	; 3E - F4
-	db	5	; 3F - F5
-	db	12h	; 40 - F6
-	db	18h	; 41 - F7
-	db	3	; 42 - F8
-	db	0eh	; 43 - F9
-	db	0fh	; 44 - F10
+	db	92h,'zxcvbnm',93h,94h,95h,NIL,96h
+	db	NIL,' ',NIL
+	; function keys, left of main, vertical
+	db	DC3,EOT,SOH,ACK,ENQ	; F1-F5
+	db	DC2,CAN,ETX, SO, SI	; F6-F10
 	db	0	; (Num Lock)
 	db	0	; (Scroll Lock)
-	; Keypad, NumLock off
-	db	16h	; 47 - kp 7 (Home)
-	db	1ah	; 48 - kp 8 (up)
-	db	17h	; 49 - kp 9 (PgUp)
-	db	'-'	; 4A - kp -
-	db	BS	; 4B - kp 4 (left)
-	db	1dh	; 4C - kp 5
-	db	15h	; 4D - kp 6 (right)
-	db	'+'	; 4E - kp +
-	db	6	; 4F - kp 1 (End)
-	db	LF	; 50 - kp 2 (down)
-	db	5	; 51 - kp 3 (PgDn)
-	db	12h	; 52 - kp 0 (Ins)
-	db	DEL	; 53 - kp . (Del)
+	; Keypad, NumLock off, right of main
+	db	SYN,SUB,ETB,'-'	; home,   up,  PgUp, -
+	db	 BS, GS,NAK,'+'	; left,  ---, right, +
+	db	ACK, LF,ENQ	;  end, down,  PgDn
+	db	DC2,    DEL	;  Ins 	        Del
 	; Keypad, NumLock on
-	db	'789-'
-	db	'456+'
-	db	'123'
-	db	'0.'
+	db	'7','8','9','-'
+	db	'4','5','6','+'
+	db	'1','2','3'
+	db	'0',    '.'
 
 ; special key maps - unshifted
 Lebab:	db	'1234567890-='	; 81h-8ch (top row)
@@ -1972,7 +1974,7 @@ Lebc1:	db	'!@#$%^&*()_+'	; (top row)
 	db	':"~'
 	db	'|'
 	db	'<>?'
-	db	98h
+	db	98h	; PRSC - print screen
 
 lptout:	in	PP_C		;; ebd7: db 02       ..
 Lebd9:	ani	060h		;; ebd9: e6 60       .`

@@ -461,8 +461,8 @@ L027c:	db	0	; scan code 0 not used
 	db	ESC,'1234567890-=',BS
 	db	BEL,'QWERTYUIOP[]',CR
 	db	0,'ASDFGHJKL;''`',0
-	db	'\','ZXCVBNM,./',0
-	db	'*',0,' '
+	db	'\','ZXCVBNM,./',0,'*'
+	db	0,' '
 z027c	equ	$-L027c
 
 ; Wait for intr to deliver keystroke
