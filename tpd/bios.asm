@@ -168,14 +168,15 @@ wboote:	jmp	wboot		;; de03: c3 e3 de    ...
 	; end of standard CP/M BIOS API
 
 	dw	extdat	; 0x33, wboote+48
-	; 11-char ID string
+	; 11-char ID string, 0x35, wboote+50
 	db	'Tpd '
 	db	((VERS/100) MOD 10)+'0'
 	db	'.'
-	db	((VERS/10) MOD 10)+'0'
+	db	((VERS/10) MOD 10)+'0'	; wboote+56
 	db	'/'
 	db	(VERS MOD 10)+'1'
-	db	' A'
+	db	' '	; wboote+59, indicates 8/5 config?
+	db	'A'	; wboote+60, indicates 35/40 track?
 	; floppy motor timers
 	dw	Lfd0d	; 0x40, wboote+61
 
