@@ -7,7 +7,7 @@ xputcon	macro
 	endm
 
 ; I/O ports
-PP_A	equ	0	; i8255 port A
+PP_A	equ	0	; i8255 port A (PC kbd)
 PP_B	equ	1	; i8255 port B (sys cfg dipsw)
 PP_C	equ	2	; i8255 port C
 PP_CTL	equ	3	; i8255 control
@@ -27,8 +27,8 @@ SIO_B	equ	11h
 SIO_AC	equ	12h
 SIO_BC	equ	13h
 
-CTC_0	equ	20h	; n/c?
-CTC_1	equ	21h	; vert. blanking?
+CTC_0	equ	20h	; 250KHz
+CTC_1	equ	21h	; vert. blanking
 CTC_2	equ	22h	; kbd intr
 CTC_3	equ	23h	; FDC intr
 
@@ -36,24 +36,25 @@ FDC_STS	equ	40h
 FDC_DAT	equ	41h
 FDC_CTL	equ	48h
 
+CRT_ADR	equ	49h	; for graphics mode - start addr (0)
 CRT_CTL	equ	4ah
 CRT_HUE	equ	4bh
-CRT_ADR	equ	4ch
+CRT_ROW	equ	4ch	; text mode top row of screen
 
 CLK_SIO	equ	4dh	; 1=ext clock
 INT_RST	equ	4fh	; reset serial kbd intr
 
-PIO_A	equ	50h
-PIO_B	equ	51h
+PIO_A	equ	50h	; alt (ASCII) keyboard
+PIO_B	equ	51h	; printer?
 PIO_AC	equ	52h
 PIO_BC	equ	53h
 
-CTR_0	equ	70h	; i8253 ch 0
-CTR_1	equ	71h	; i8253 ch 1
-CTR_2	equ	72h	; i8253 ch 2
+CTR_0	equ	70h	; i8253 ch 0 (1.2288MHz) SIO-A baud
+CTR_1	equ	71h	; i8253 ch 1 (1.2288MHz) SIO-B baud
+CTR_2	equ	72h	; i8253 ch 2 (1.2288MHz) speaker
 CTR_C	equ	73h	; i8253 ctrl
 
-; i8255 B bits (dipsw)
+; i8255 B bits (dipsw) - only 4 bits
 CFG_801	equ	00000001b	; 1 = drives 0,1 are 8"
 CFG_823	equ	00000010b	; 1 = drives 2,3 are 8"
 CFG_SER	equ	00000100b	; 1 = CON: is serial port
@@ -72,10 +73,10 @@ MTR_DS1	equ	02h	; MOTOR on to DS1
 MTR_DS2	equ	04h	; MOTOR on to DS2
 MTR_DS3	equ	08h	; MOTOR on to DS3
 
-PPC_SPK	equ	11000000b	; turn speaker on
+PPC_SPK	equ	11000000b	; turn speaker on (SPKGT+SPKDT)
 PPC_64K	equ	00000000b	; bank select for 64K RAM
 PPC_ROM	equ	00000001b	; bank select for ROM, video RAM, high RAM
-PPC_KRS	equ	00000010b	; PC kbd /RESET (0=RESET)
+PPC_KRS	equ	00000010b	; PC kbd disable (0=disable)
 
 ; ASCII constants
 BEL	equ	7
@@ -210,7 +211,7 @@ L0065:	mvi	a,0c3h		;; 0065: 3e c3       >.
 	out	CTC_1		;; 007d: d3 21       ..
 	xra	a		;; 007f: af          .
 	out	CRT_CTL	; display off
-	out	CRT_ADR	; start row 0
+	out	CRT_ROW	; start row 0
 	out	CRT_HUE	; black background?
 	lxi	h,crtout		;; 0086: 21 d1 02    ...
 	shld	conout+1	;; 0089: 22 53 ff    "S.
@@ -1109,9 +1110,10 @@ nulint:	ei			;; 07b2: fb          .
 	reti			;; 07b3: ed 4d       .M
 
 ; manually reset CRTC to first row?
+; (not neccessary each time? just simpler?)
 vertbl:	push	psw		;; 07b5: f5          .
 	xra	a		;; 07b6: af          .
-	out	CRT_ADR		;; 07b7: d3 4c       .L
+	out	CRT_ROW		;; 07b7: d3 4c       .L
 	jmp	reti1	; return from intr
 
 ; interrupt vector table?

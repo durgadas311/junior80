@@ -21,20 +21,20 @@ SIO_B	equ	11h
 SIO_AC	equ	12h
 SIO_BC	equ	13h
 
-CTC1_0	equ	20h	; free-run counter?
-CTC1_1	equ	21h	; tick (120) (freq?)
-CTC1_2	equ	22h	; not used?
+CTC1_0	equ	20h	; 307.18KHz
+CTC1_1	equ	21h	; CTC1_0 TC (1.2KHz)
+CTC1_2	equ	22h	; not used? (L2)
 CTC1_3	equ	23h	; vert retrace intr
 ; corresponds to Jr80 CTC @ 20h?
 ; at least for FDC intr.
-CTC2_0	equ	24h	; event?
-CTC2_1	equ	25h	; not used?
-CTC2_2	equ	26h	; event?
+CTC2_0	equ	24h	; not used? (L10)
+CTC2_1	equ	25h	; not used? (L11)
+CTC2_2	equ	26h	; CTC2_0 TC (1.2KHz)
 CTC2_3	equ	27h	; FDC intr
 ; i8253 - same as Jr80 at 70h?
 CTR_0	equ	28h	; baud (9600) @1.2288MHz
 CTR_1	equ	29h	; baud (9600) @1.2288MHz
-CTR_2	equ	2ah	; sound (951 = 1292Hz?)
+CTR_2	equ	2ah	; sound (951 = 1292Hz) @1.2288MHz
 CTR_C	equ	2bh
 ;
 PIO1_A	equ	2ch	; PC keyboard (scan codes)
@@ -62,10 +62,10 @@ PIO_B	equ	51h	; parallel printer data
 PIO_AC	equ	52h
 PIO_BC	equ	53h
 ; similar to Jr80 4a-4f?
-CRT_ADR	equ	60h
+CRT_ADR	equ	60h	; for graphics mode - start addr (0)
 CRT_CTL	equ	62h
 CRT_HUE	equ	63h	; how used?
-CRT_ROW	equ	64h	; new - how used? 'top' for scrolling?
+CRT_ROW	equ	64h	; text mode top row of screen
 
 ; DMAC count reg high bits
 DMA_RD	equ	80h
@@ -88,10 +88,10 @@ CFG_523	equ	01000000b	; 1 = 5.25" floppy drives DS2/DS3
 CFG_501	equ	10000000b	; 1 = 5.25" floppy drives DS0/DS1
 
 PPA_BNK	equ	00000111b	; mask for memory bank select
-PPA_D4	equ	00010000b	; unknown - initial value
-PPA_SPK	equ	00100000b	; enable speaker sound
+PPA_SPG	equ	00010000b	; enable speaker clock (SPKGT)
+PPA_SPK	equ	00100000b	; enable speaker sound (SPKDT)
 
-PPB_KRS	equ	00000010b	; PC kbd /RESET (0=RESET)
+PPB_KRS	equ	00000010b	; PC kbd disable (0=disable)
 
 crtram	equ	4000h
 ramwin	equ	4000h	; banked RAM window, 32K length
@@ -178,13 +178,13 @@ wboote:	jmp	wboot		;; de03: c3 e3 de    ...
 	db	' '	; wboote+59, indicates 8/5 config?
 	db	'A'	; wboote+60, indicates 35/40 track?
 	; floppy motor timers
-	dw	Lfd0d	; 0x40, wboote+61
+	dw	fdcmtr	; 0x40, wboote+61
 
 	; 0x42, wboote+63
 	jmp	fdsens		; FDC SENSE command, C=drive
 	jmp	ticset		; setup tick hook
 	jmp	rdrst		; RDR: input status
-	jmp	Lf523		; graphics routine - set/clear/get pixel
+	jmp	grphcs		; graphics routine - set/clear/get pixel
 Lde4e:	jmp	nulfnc		;; de4e: c3 68 df    .h.
 Lde51:	jmp	Leee7		; CRT mode 20h
 	jmp	uc1out		; UC1: output
@@ -209,10 +209,10 @@ Lde70:	dw	nulint	; chB TxE
 	dw	axtint	; chA Ext/sts change
 	dw	arxint	; chA RxA
 	dw	aspint	; chA Rx spc
-	dw	nulint	; xx80 - CTC1 ch0
+	dw	nulint	; xx80 - CTC1 ch0 - prescale for ch1
 	dw	tick	; xx82 - CTC1 ch1 - general timeout?
 	dw	nulint	; xx84 - CTC1 ch2
-Lde86:	dw	Lf0da	; xx86 - CTC1 ch3 - video?
+Lde86:	dw	Lf0da	; xx86 - CTC1 ch3 - video? ("NVIMT")
 	dw	nulint	; xx88 - CTC2 ch0
 	dw	nulint	; xx8a - CTC2 ch1
 	dw	nulint	; xx8c - CTC2 ch2
@@ -236,7 +236,7 @@ Ldea8:	dw	rsxe	; RSX?
 	dw	nulfnc
 	dw	Le950	; RDR: input status redir
 	dw	whooks	; warm boot hooks - 0xb0, wboote+173
-	dw	Lf518	; ptr to CRT RAM curr page - 0xb2, wboote+175
+	dw	crtstr+12 ; ptr to CRT RAM curr page - 0xb2, wboote+175
 	dw	0
 	dw	0
 	dw	Lf508	; hook 2 data? two words...
@@ -277,7 +277,7 @@ wboot:	lxi	sp,tpa		;; dee3: 31 00 01    1..
 	di			;; df09: f3          .
 	mvi	a,0c3h		;; df0a: 3e c3       >.
 	sta	cpm		;; df0c: 32 00 00    2..
-	lxi	h,wboote		;; df0f: 21 03 de    ...
+	lxi	h,wboote	;; df0f: 21 03 de    ...
 	shld	cpm+1		;; df12: 22 01 00    "..
 	sta	bdos		;; df15: 32 05 00    2..
 	; this stub prevents CCP from being overwritten...
@@ -302,7 +302,7 @@ wboot:	lxi	sp,tpa		;; dee3: 31 00 01    1..
 	ani	022h		;; df42: e6 22       ."
 	sta	ffoflg		;; df44: 32 13 fd    2..
 	; call all wboot hooks...
-	lxi	h,whooks		;; df47: 21 2a fd    .*.
+	lxi	h,whooks	;; df47: 21 2a fd    .*.
 	mov	a,m		;; df4a: 7e          ~
 	inx	h		;; df4b: 23          #
 Ldf4c:	stc			;; df4c: 37          7
@@ -415,13 +415,13 @@ Ldffd:	in	PIO1_B		;; dffd: db 2d       .-
 	jmp	Le03a		;; e003: c3 3a e0    .:.
 
 ; setup 8" drives
-Le006:	lxi	h,fd8fm0		;; e006: 21 e7 e7    ...
+Le006:	lxi	h,fd8fm0	;; e006: 21 e7 e7    ...
 	shld	Le0b9+1		;; e009: 22 ba e0    "..
-	lxi	h,fd8fm1		;; e00c: 21 cf e7    ...
+	lxi	h,fd8fm1	;; e00c: 21 cf e7    ...
 	shld	Le0ca+1		;; e00f: 22 cb e0    "..
-	lxi	h,fd8fm2		;; e012: 21 d7 e7    ...
+	lxi	h,fd8fm2	;; e012: 21 d7 e7    ...
 	shld	Le0d1+1		;; e015: 22 d2 e0    "..
-	lxi	h,fd8fm3		;; e018: 21 df e7    ...
+	lxi	h,fd8fm3	;; e018: 21 df e7    ...
 	shld	Le0c2+1		;; e01b: 22 c3 e0    "..
 	xra	a		;; e01e: af          .
 	sta	Lfd09	; set 8" drives
@@ -437,17 +437,17 @@ Le006:	lxi	h,fd8fm0		;; e006: 21 e7 e7    ...
 	jmp	Le6a7		;; e037: c3 a7 e6    ...
 
 ; setup 5.25" drives
-Le03a:	lxi	h,fd5fm0		;; e03a: 21 7c e8    .|.
+Le03a:	lxi	h,fd5fm0	;; e03a: 21 7c e8    .|.
 	shld	Le0b9+1		;; e03d: 22 ba e0    "..
-	lxi	h,fd5fm1		;; e040: 21 64 e8    .d.
+	lxi	h,fd5fm1	;; e040: 21 64 e8    .d.
 	shld	Le0ca+1		;; e043: 22 cb e0    "..
-	lxi	h,fd5fm2		;; e046: 21 6c e8    .l.
+	lxi	h,fd5fm2	;; e046: 21 6c e8    .l.
 	shld	Le0d1+1		;; e049: 22 d2 e0    "..
-	lxi	h,fd5fm3		;; e04c: 21 74 e8    .t.
+	lxi	h,fd5fm3	;; e04c: 21 74 e8    .t.
 	shld	Le0c2+1		;; e04f: 22 c3 e0    "..
 	mvi	a,001h		;; e052: 3e 01       >.
 	sta	Lfd09	; set 5.25" drives
-	mvi	b,FDC_RST+FDC_5IN	; release i8272 RESET, 5.25" drives
+	mvi	b,FDC_RST+FDC_5IN ; release i8272 RESET, 5.25" drives
 	call	Le06f		;; e059: cd 6f e0    .o.
 	di			;; e05c: f3          .
 	mvi	b,003h	; SPECIFY command
@@ -495,7 +495,7 @@ Le080:	lda	Lfcd8		;; e080: 3a d8 fc    :..
 Le0a6:	lda	Lfcdb		;; e0a6: 3a db fc    :..
 	cpi	0ffh		;; e0a9: fe ff       ..
 	jz	Le0f0		;; e0ab: ca f0 e0    ...
-Le0ae:	lxi	h,curdsk		;; e0ae: 21 e0 fc    ...
+Le0ae:	lxi	h,curdsk	;; e0ae: 21 e0 fc    ...
 	cmp	m		;; e0b1: be          .
 	jz	Le0e0		;; e0b2: ca e0 e0    ...
 	mov	m,a		;; e0b5: 77          w
@@ -584,7 +584,7 @@ Le138:	xra	a		;; e138: af          .
 	; special handling for dpb5m2...
 	mov	l,e		;; e164: 6b          k
 	mov	h,d		;; e165: 62          b
-	lxi	b,dpb5mZ		;; e166: 01 a2 e8    ...
+	lxi	b,dpb5mZ	;; e166: 01 a2 e8    ...
 	mov	m,b		;; e169: 70          p
 	dcx	h		;; e16a: 2b          +
 	mov	m,c		;; e16b: 71          q
@@ -660,9 +660,9 @@ Le1e1:	xchg			;; e1e1: eb          .
 
 Le1e6:	lda	Lfd09		;; e1e6: 3a 09 fd    :..
 	ora	a		;; e1e9: b7          .
-	lxi	h,trn5m2		;; e1ea: 21 df e8    ...
+	lxi	h,trn5m2	;; e1ea: 21 df e8    ...
 	jnz	Le1f3		;; e1ed: c2 f3 e1    ...
-	lxi	h,trn8m2		;; e1f0: 21 45 e8    .E.
+	lxi	h,trn8m2	;; e1f0: 21 45 e8    .E.
 Le1f3:	mov	a,c		;; e1f3: 79          y
 	push	psw		;; e1f4: f5          .
 	rar			;; e1f5: 1f          .
@@ -760,9 +760,9 @@ Le268:	sta	wrflg		;; e268: 32 e5 fc    2..
 	lxi	h,127		;; e284: 21 7f 00    ...
 	shld	Lfce7		;; e287: 22 e7 fc    "..
 	lda	cursec		;; e28a: 3a e1 fc    :..
-	sta	fdcbuf+3		;; e28d: 32 01 fd    2..
+	sta	fdcbuf+3	;; e28d: 32 01 fd    2..
 	lda	cursid		;; e290: 3a 0c fd    :..
-	sta	fdcbuf+2		;; e293: 32 00 fd    2..
+	sta	fdcbuf+2	;; e293: 32 00 fd    2..
 	lda	wrflg		;; e296: 3a e5 fc    :..
 	ora	a		;; e299: b7          .
 	jz	Le43c		;; e29a: ca 3c e4    .<.
@@ -875,14 +875,14 @@ Le36a:	lda	Lfcd8		;; e36a: 3a d8 fc    :..
 	lda	Lfcfc		;; e36e: 3a fc fc    :..
 	cmp	l		;; e371: bd          .
 	jnz	Le38d		;; e372: c2 8d e3    ...
-	lxi	h,curtrk		;; e375: 21 de fc    ...
-	lda	fdcbuf+1		;; e378: 3a ff fc    :..
+	lxi	h,curtrk	;; e375: 21 de fc    ...
+	lda	fdcbuf+1	;; e378: 3a ff fc    :..
 	cmp	m		;; e37b: be          .
 	jnz	Le38d		;; e37c: c2 8d e3    ...
-	lda	fdcbuf+2		;; e37f: 3a 00 fd    :..
+	lda	fdcbuf+2	;; e37f: 3a 00 fd    :..
 	cmp	b		;; e382: b8          .
 	jnz	Le38d		;; e383: c2 8d e3    ...
-	lda	fdcbuf+3		;; e386: 3a 01 fd    :..
+	lda	fdcbuf+3	;; e386: 3a 01 fd    :..
 	cmp	c		;; e389: b9          .
 	jz	Le3b7		;; e38a: ca b7 e3    ...
 Le38d:	push	b		;; e38d: c5          .
@@ -890,7 +890,7 @@ Le38d:	push	b		;; e38d: c5          .
 	call	Le61d		;; e391: cd 1d e6    ...
 	call	Le6bc		;; e394: cd bc e6    ...
 	pop	b		;; e397: c1          .
-	lxi	h,fdcbuf+3		;; e398: 21 01 fd    ...
+	lxi	h,fdcbuf+3	;; e398: 21 01 fd    ...
 	mov	m,c		;; e39b: 71          q
 	dcx	h		;; e39c: 2b          +
 	mov	m,b		;; e39d: 70          p
@@ -1145,7 +1145,7 @@ Le5d3:	mov	b,a		;; e5d3: 47          G
 	mvi	a,002h	; prevent tick hook during I/O
 	sta	Lfd11		;; e5dc: 32 11 fd    2..
 	lda	curtrk	; a.k.a ramdisk bank number
-	adi	002h		;; e5e2: c6 02       ..
+	adi	2	; reserved banks...
 	ora	b		;; e5e4: b0          .
 	mov	c,a		;; e5e5: 4f          O
 	in	PP_A		;; e5e6: db 00       ..
@@ -1154,7 +1154,7 @@ Le5d3:	mov	b,a		;; e5d3: 47          G
 	; user TPA no longer valid...
 	lxi	b,128		;; e5eb: 01 80 00    ...
 	ldir			;; e5ee: ed b0       ..
-	ani	11110000b	;; e5f0: e6 f0       ..
+	ani	11110000b	; ENNMI off
 	out	PP_A		;; e5f2: d3 00       ..
 	; user TPA safe again
 	jmp	ticfin		;; e5f4: c3 46 ea    .F.
@@ -1250,7 +1250,7 @@ Le69b:	call	print		;; e69b: cd 67 e6    .g.
 Le6a7:	call	Le6aa		;; e6a7: cd aa e6    ...
 Le6aa:	call	Le742		;; e6aa: cd 42 e7    .B.
 	xra	a		;; e6ad: af          .
-	sta	fdcbuf+1		;; e6ae: 32 ff fc    2..
+	sta	fdcbuf+1	;; e6ae: 32 ff fc    2..
 	mvi	b,007h		;; e6b1: 06 07       ..
 	mvi	c,001h		;; e6b3: 0e 01       ..
 	call	fdccmd		;; e6b5: cd e1 e6    ...
@@ -1274,7 +1274,7 @@ Le6d2:	mvi	b,00fh	; SEEK command
 	call	fdccmd		;; e6d6: cd e1 e6    ...
 	jc	Le6d2		;; e6d9: da d2 e6    ...
 	mov	a,e		;; e6dc: 7b          {
-	sta	fdcbuf+1		;; e6dd: 32 ff fc    2..
+	sta	fdcbuf+1	;; e6dd: 32 ff fc    2..
 	ret			;; e6e0: c9          .
 
 ; B=command, fdcbuf=params, C=num params
@@ -1348,7 +1348,7 @@ Le742:	push	b		;; e742: c5          .
 	lda	Lfd09		;; e743: 3a 09 fd    :..
 	ora	a		;; e746: b7          .
 	jz	Le778		;; e747: ca 78 e7    .x.
-	lxi	h,Lfd0d-1	;; e74a: 21 0c fd    ...
+	lxi	h,fdcmtr-1	;; e74a: 21 0c fd    ...
 	lda	fdcbuf		;; e74d: 3a fe fc    :..
 	ani	003h		;; e750: e6 03       ..
 	mov	c,a		;; e752: 4f          O
@@ -1363,7 +1363,7 @@ Le756:	inx	h		;; e756: 23          #
 	di			;; e75d: f3          .
 	mov	a,m		;; e75e: 7e          ~
 	ora	a		;; e75f: b7          .
-	mvi	m,40	; 40 second timeout?
+	mvi	m,40	; 4.0 second timeout
 	ei			;; e762: fb          .
 	jnz	Le778	; drive is already active...
 	lda	Lde6f		;; e766: 3a 6f de    :o.
@@ -1650,7 +1650,7 @@ tick:	sspd	savst2		;; e99b: ed 73 0a ea .s..
 	push	b		;; e9a3: c5          .
 	push	psw		;; e9a4: f5          .
 	; check all floppy motor timeouts
-	lxi	h,Lfd0d		;; e9a5: 21 0d fd    ...
+	lxi	h,fdcmtr	;; e9a5: 21 0d fd    ...
 	mvi	b,4	; 4 drives total?
 	mvi	c,11111110b	;; e9aa: 0e fe       ..
 Le9ac:	mov	a,m		;; e9ac: 7e          ~
@@ -1727,7 +1727,7 @@ ticfnc:	dw	0	; tick hook routine
 ticset:	mov	a,e		;; ea12: 7b          {
 	sta	ticena		;; ea13: 32 0f ea    2..
 	shld	ticfnc		;; ea16: 22 10 ea    "..
-	lxi	h,ticcnt		;; ea19: 21 0d ea    ...
+	lxi	h,ticcnt	;; ea19: 21 0d ea    ...
 	mov	m,c		;; ea1c: 71          q
 	inx	h		;; ea1d: 23          #
 	mov	m,b		;; ea1e: 70          p
@@ -1856,7 +1856,7 @@ Leacf:	mov	a,b		;; eacf: 78          x
 	cpi	010h		;; ead0: fe 10       ..
 	jrnc	Lead7	; not for toggles...
 	cma		; clear bit
-	ana	m		;; ead5: a6          .
+	ana	m	;
 	mov	m,a		;; ead6: 77          w
 Lead7:	pop	d		;; ead7: d1          .
 	pop	b		;; ead8: c1          .
@@ -1933,7 +1933,7 @@ Leb36:	bit	7,a	; special mapping keys
 	mov	c,a		;; eb3b: 4f          O
 	mov	a,e		;; eb3c: 7b          {
 	ani	003h		;; eb3d: e6 03       ..
-	lxi	h,Lebab-1		;; eb3f: 21 aa eb    ...
+	lxi	h,Lebab-1	;; eb3f: 21 aa eb    ...
 	jrz	Leb47		;; eb42: 28 03       (.
 	lxi	h,Lebc1-1	;; eb44: 21 c0 eb    ...
 Leb47:	dad	b		;; eb47: 09          .
@@ -1979,8 +1979,8 @@ Lebc1:	db	'!@#$%^&*()_+'	; (top row)
 	db	98h	; PRSC - print screen
 
 lptout:	in	PP_C		;; ebd7: db 02       ..
-Lebd9:	ani	060h		;; ebd9: e6 60       .`
-	cpi	020h		;; ebdb: fe 20       . 
+Lebd9:	ani	060h	; BS1/BSENS
+	cpi	020h	; BS1=0, BSENS=1
 	jrnz	Lec0f	; LPT: not attached
 Lebdf:	lxi	d,0		;; ebdf: 11 00 00    ...
 	mvi	b,10		;; ebe2: 06 0a       ..
@@ -2001,7 +2001,7 @@ Lebe7:	mov	a,m		;; ebe7: 7e          ~
 
 Lec03:	dcr	m	; set BUSY
 	in	PP_C		;; ec04: db 02       ..
-	ani	010h	; LPT: data inverted?
+	ani	010h	; BS0 - LPT: data inverted?
 	mov	a,c		;; ec08: 79          y
 	jrnz	Lec0c		;; ec09: 20 01        .
 	cma			;; ec0b: 2f          /
@@ -2028,10 +2028,10 @@ lptint:	push	psw		;; ec42: f5          .
 	ei			;; ec48: fb          .
 	reti			;; ec49: ed 4d       .M
 
-uc1st:	lxi	h,bffcnt		;; ec4b: 21 1d fd    ...
+uc1st:	lxi	h,bffcnt	;; ec4b: 21 1d fd    ...
 	jmp	Lea9b		;; ec4e: c3 9b ea    ...
 
-Lec51:	lxi	h,affcnt		;; ec51: 21 18 fd    ...
+Lec51:	lxi	h,affcnt	;; ec51: 21 18 fd    ...
 	jmp	Lea9b		;; ec54: c3 9b ea    ...
 
 Lec57:	sta	Lec6f		;; ec57: 32 6f ec    2o.
@@ -2066,7 +2066,7 @@ arxint:	sspd	rxsav		;; ec7b: ed 73 a5 ee .s..
 	jrz	Lecd2		;; ec98: 28 38       (8
 	ora	a		;; ec9a: b7          .
 	jrz	Lecbe		;; ec9b: 28 21       (.
-Lec9d:	lxi	h,affcnt		;; ec9d: 21 18 fd    ...
+Lec9d:	lxi	h,affcnt	;; ec9d: 21 18 fd    ...
 	mov	a,m		;; eca0: 7e          ~
 	cpi	127		;; eca1: fe 7f       ..
 	jrnc	Lecc8		;; eca3: 30 23       0#
@@ -2150,12 +2150,12 @@ Led29:	ani	0fbh		;; ed29: e6 fb       ..
 
 Led33:	ei			;; ed33: fb          .
 	call	Led61		;; ed34: cd 61 ed    .a.
-Led37:	lxi	h,ffoflg		;; ed37: 21 13 fd    ...
+Led37:	lxi	h,ffoflg	;; ed37: 21 13 fd    ...
 	mov	a,m		;; ed3a: 7e          ~
 	bit	2,a		;; ed3b: cb 57       .W
 	jrnz	Led29		;; ed3d: 20 ea        .
 	di			;; ed3f: f3          .
-	lxi	h,affcnt		;; ed40: 21 18 fd    ...
+	lxi	h,affcnt	;; ed40: 21 18 fd    ...
 	mov	a,m		;; ed43: 7e          ~
 	ora	a		;; ed44: b7          .
 	jrz	Led33		;; ed45: 28 ec       (.
@@ -2174,7 +2174,7 @@ Led37:	lxi	h,ffoflg		;; ed37: 21 13 fd    ...
 	cmc			;; ed5f: 3f          ?
 	ret			;; ed60: c9          .
 
-Led61:	lxi	h,ffoflg		;; ed61: 21 13 fd    ...
+Led61:	lxi	h,ffoflg	;; ed61: 21 13 fd    ...
 	mov	a,m		;; ed64: 7e          ~
 	bit	1,a		;; ed65: cb 4f       .O
 	rz			;; ed67: c8          .
@@ -2220,7 +2220,7 @@ brxint:	sspd	rxsav		;; ed8d: ed 73 a5 ee .s..
 	jrz	Leddd		;; edab: 28 30       (0
 	ora	a		;; edad: b7          .
 	jz	Lecbe		;; edae: ca be ec    ...
-Ledb1:	lxi	h,bffcnt		;; edb1: 21 1d fd    ...
+Ledb1:	lxi	h,bffcnt	;; edb1: 21 1d fd    ...
 	mov	a,m		;; edb4: 7e          ~
 	cpi	127		;; edb5: fe 7f       ..
 	jrnc	Ledd5		;; edb7: 30 1c       0.
@@ -2299,12 +2299,12 @@ Lee37:	ani	10111111b	;; ee37: e6 bf       ..
 ; get char from FIFO
 Lee41:	ei			;; ee41: fb          .
 	call	Lee6f		;; ee42: cd 6f ee    .o.
-uc1in:	lxi	h,ffoflg		;; ee45: 21 13 fd    ...
+uc1in:	lxi	h,ffoflg	;; ee45: 21 13 fd    ...
 	mov	a,m		;; ee48: 7e          ~
 	bit	6,a		;; ee49: cb 77       .w
 	jrnz	Lee37		;; ee4b: 20 ea        .
 	di			;; ee4d: f3          .
-	lxi	h,bffcnt		;; ee4e: 21 1d fd    ...
+	lxi	h,bffcnt	;; ee4e: 21 1d fd    ...
 	mov	a,m		;; ee51: 7e          ~
 	ora	a		;; ee52: b7          .
 	jrz	Lee41		;; ee53: 28 ec       (.
@@ -2323,7 +2323,7 @@ uc1in:	lxi	h,ffoflg		;; ee45: 21 13 fd    ...
 	cmc			;; ee6d: 3f          ?
 	ret			;; ee6e: c9          .
 
-Lee6f:	lxi	h,ffoflg		;; ee6f: 21 13 fd    ...
+Lee6f:	lxi	h,ffoflg	;; ee6f: 21 13 fd    ...
 	mov	a,m		;; ee72: 7e          ~
 	bit	5,a		;; ee73: cb 6f       .o
 	rz			;; ee75: c8          .
@@ -2366,12 +2366,12 @@ Leebf:	call	ticsus		;; eebf: cd 08 ef    ...
 	sspd	crtsav		;; eec2: ed 73 f0 fd .s..
 	lxi	sp,crtstk	;; eec6: 31 f0 fd    1..
 	pushix			;; eec9: dd e5       ..
-	lxix	Lf50c		;; eecb: dd 21 0c f5 ....
-	lda	Lf51a		;; eecf: 3a 1a f5    :..
+	lxix	crtstr		;; eecb: dd 21 0c f5 ....
+	lda	crtstr+14	;; eecf: 3a 1a f5    :..
 	setb	2,a	; enable WR vid ram
 	out	CRT_CTL		;; eed4: d3 62       .b
 	call	Lef13		;; eed6: cd 13 ef    ...
-Leed9:	lda	Lf51a		;; eed9: 3a 1a f5    :..
+Leed9:	lda	crtstr+14	;; eed9: 3a 1a f5    :..
 	out	CRT_CTL		;; eedc: d3 62       .b
 	popix			;; eede: dd e1       ..
 	lspd	crtsav		;; eee0: ed 7b f0 fd .{..
@@ -2381,13 +2381,13 @@ Leee7:	call	ticsus		;; eee7: cd 08 ef    ...
 	sspd	crtsav		;; eeea: ed 73 f0 fd .s..
 	lxi	sp,crtstk	;; eeee: 31 f0 fd    1..
 	pushix			;; eef1: dd e5       ..
-	lxix	Lf50c		;; eef3: dd 21 0c f5 ....
-	lda	Lf51a		;; eef7: 3a 1a f5    :..
+	lxix	crtstr		;; eef3: dd 21 0c f5 ....
+	lda	crtstr+14	;; eef7: 3a 1a f5    :..
 	setb	2,a	; enable CRT RAM access
 	out	CRT_CTL		;; eefc: d3 62       .b
 	mvi	a,020h		;; eefe: 3e 20       > 
-	call	Lf165	; set mode bit
-	call	Lefe8	; update attr/pos
+	call	crttgl	; set mode bit
+	call	crtupd	; update attr/pos
 	jr	Leed9		;; ef06: 18 d1       ..
 
 ; suspend any tick hook action
@@ -2400,7 +2400,7 @@ ticsus:	di			;; ef08: f3          .
 	ei			;; ef11: fb          .
 	ret			;; ef12: c9          .
 
-Lef13:	lxi	h,Lf510		;; ef13: 21 10 f5    ...
+Lef13:	lxi	h,crtstr+4	;; ef13: 21 10 f5    ...
 	mov	a,m		;; ef16: 7e          ~
 	ora	a		;; ef17: b7          .
 	jnz	Lf0f8	; ESC prefix
@@ -2412,10 +2412,10 @@ Lef13:	lxi	h,Lf510		;; ef13: 21 10 f5    ...
 	rz			;; ef26: c8          .
 Lef27:	cpi	' '		;; ef27: fe 20       . 
 	jrc	Lef37		;; ef29: 38 0c       8.
-	lhld	Lf513		;; ef2b: 2a 13 f5    *..
+	lhld	crtstr+7	;; ef2b: 2a 13 f5    *..
 	mov	m,a		;; ef2e: 77          w
-	lda	Lf517		;; ef2f: 3a 17 f5    :..
-	sta	Lf515		;; ef32: 32 15 f5    2..
+	lda	crtstr+11	;; ef2f: 3a 17 f5    :..
+	sta	crtstr+9	;; ef32: 32 15 f5    2..
 	jr	Lef47		;; ef35: 18 10       ..
 
 Lef37:	lxi	h,Lf2cc		;; ef37: 21 cc f2    ...
@@ -2426,7 +2426,7 @@ Lef37:	lxi	h,Lf2cc		;; ef37: 21 cc f2    ...
 ; NAK / ESC C processing
 ; move right? (wrap to next row - if enabled)
 curri:	setx	5,+3		;; ef43: dd cb 03 ee ....
-Lef47:	lda	Lf50c		;; ef47: 3a 0c f5    :..
+Lef47:	lda	crtstr+0	;; ef47: 3a 0c f5    :..
 	cmpx	+5		;; ef4a: dd be 05    ...
 	jrnc	Lef54		;; ef4d: 30 05       0.
 	inrx	+0		;; ef4f: dd 34 00    .4.
@@ -2435,11 +2435,11 @@ Lef47:	lda	Lf50c		;; ef47: 3a 0c f5    :..
 Lef54:	bitx	1,+2		;; ef54: dd cb 02 4e ...N
 	rz			;; ef58: c8          .
 	mvix	0,+0		;; ef59: dd 36 00 00 .6..
-	lda	Lf50d		;; ef5d: 3a 0d f5    :..
+	lda	crtstr+1	;; ef5d: 3a 0d f5    :..
 	cmpx	+6		;; ef60: dd be 06    ...
 	jrnc	Lef6e		;; ef63: 30 09       0.
 Lef65:	inrx	+1		;; ef65: dd 34 01    .4.
-	cpi	11		;; ef68: fe 0b       ..
+	cpi	VT		;; ef68: fe 0b       ..
 	jrnz	Lefa2		;; ef6a: 20 36        6
 	jr	Lef87		;; ef6c: 18 19       ..
 ; at bottom of screen
@@ -2453,104 +2453,110 @@ Lef7d:	bitx	0,+2		;; ef7d: dd cb 02 46 ...F
 	mvix	0,+1		;; ef83: dd 36 01 00 .6..
 Lef87:	bitx	5,+3		;; ef87: dd cb 03 6e ...n
 	jrnz	Lefa2		;; ef8b: 20 15        .
-	call	Lefe8		;; ef8d: cd e8 ef    ...
+	call	crtupd		;; ef8d: cd e8 ef    ...
 	bitx	4,+2		;; ef90: dd cb 02 66 ...f
 	rz			;; ef94: c8          .
-	mvi	a,00bh		;; ef95: 3e 0b       >.
-	inr	a		;; ef97: 3c          <
+	mvi	a,12-1		;; ef95: 3e 0b       >.
+	inr	a	; A=12, NZ
 	jmp	Lf1b6		;; ef98: c3 b6 f1    ...
 
 Lef9b:	resx	5,+3		;; ef9b: dd cb 03 ae ....
 	jmp	Lf09e		;; ef9f: c3 9e f0    ...
 
 Lefa2:	resx	5,+3		;; efa2: dd cb 03 ae ....
-	jr	Lefe8		;; efa6: 18 40       .@
+	jr	crtupd		;; efa6: 18 40       .@
 
-Lefa8:	lda	Lf50c		;; efa8: 3a 0c f5    :..
-	ani	0f8h		;; efab: e6 f8       ..
-	adi	008h		;; efad: c6 08       ..
+; TAB to next 8th col
+Lefa8:	lda	crtstr+0	;; efa8: 3a 0c f5    :..
+	ani	11111000b	;; efab: e6 f8       ..
+	adi	8		;; efad: c6 08       ..
 	cmpx	+5		;; efaf: dd be 05    ...
 	jrc	Lefb5		;; efb2: 38 01       8.
 	dcr	a		;; efb4: 3d          =
-Lefb5:	sta	Lf50c		;; efb5: 32 0c f5    2..
-	jr	Lefe8		;; efb8: 18 2e       ..
+Lefb5:	sta	crtstr+0	;; efb5: 32 0c f5    2..
+	jr	crtupd		;; efb8: 18 2e       ..
 
-curle:	lda	Lf50c		;; efba: 3a 0c f5    :..
+curle:	lda	crtstr+0	;; efba: 3a 0c f5    :..
 	ora	a		;; efbd: b7          .
 	jrz	Lefc5		;; efbe: 28 05       (.
 	dcrx	+0		;; efc0: dd 35 00    .5.
-	jr	Lefe8		;; efc3: 18 23       .#
+	jr	crtupd		;; efc3: 18 23       .#
 
 Lefc5:	bitx	1,+2		;; efc5: dd cb 02 4e ...N
 	rz			;; efc9: c8          .
-	lda	Lf511		;; efca: 3a 11 f5    :..
-	sta	Lf50c		;; efcd: 32 0c f5    2..
-	lda	Lf50d		;; efd0: 3a 0d f5    :..
+	; reverse-wrap line
+	lda	crtstr+5	;; efca: 3a 11 f5    :..
+	sta	crtstr+0	;; efcd: 32 0c f5    2..
+	lda	crtstr+1	;; efd0: 3a 0d f5    :..
 	ora	a		;; efd3: b7          .
 	jrnz	Lefe5		;; efd4: 20 0f        .
 	bitx	0,+2		;; efd6: dd cb 02 46 ...F
 	jz	Lf08d		;; efda: ca 8d f0    ...
-	lda	Lf512		;; efdd: 3a 12 f5    :..
-	sta	Lf50d		;; efe0: 32 0d f5    2..
-	jr	Lefe8		;; efe3: 18 03       ..
+	; reverse wrap screen
+	lda	crtstr+6	;; efdd: 3a 12 f5    :..
+	sta	crtstr+1	;; efe0: 32 0d f5    2..
+	jr	crtupd		;; efe3: 18 03       ..
 
 Lefe5:	dcrx	+1		;; efe5: dd 35 01    .5.
-Lefe8:	lhld	Lf513		;; efe8: 2a 13 f5    *..
-	lda	Lf515		;; efeb: 3a 15 f5    :..
+; update cursor position/etc
+crtupd:	lhld	crtstr+7	; cursor location
+	lda	crtstr+9	;; efeb: 3a 15 f5    :..
 	inx	h		;; efee: 23          #
-	mov	m,a		;; efef: 77          w
-	lda	Lf50d		;; eff0: 3a 0d f5    :..
-	ldx	e,+0		;; eff3: dd 5e 00    .^.
-	call	crtadr		;; eff6: cd f9 f1    ...
-	shld	Lf513		;; eff9: 22 13 f5    "..
+	mov	m,a	; restore mode at cursor
+	lda	crtstr+1	; row
+	ldx	e,+0		; col
+	call	crtadr		; compute new position
+	shld	crtstr+7	; set new cursor adr
 Leffc:	inx	h		;; effc: 23          #
 	mov	a,m		;; effd: 7e          ~
-	sta	Lf515		;; effe: 32 15 f5    2..
+	sta	crtstr+9	; cache mode
 	bitx	5,+2		;; f001: dd cb 02 6e ...n
 	rnz			;; f005: c0          .
+	; show cursor as rev-vid
 	cma			;; f006: 2f          /
 	mov	m,a		;; f007: 77          w
 	ret			;; f008: c9          .
 
-curdn:	lda	Lf50d		;; f009: 3a 0d f5    :..
+curdn:	lda	crtstr+1	;; f009: 3a 0d f5    :..
 	cmpx	+6		;; f00c: dd be 06    ...
 	jrnc	Lf016		;; f00f: 30 05       0.
 	inrx	+1		;; f011: dd 34 01    .4.
-	jr	Lefe8		;; f014: 18 d2       ..
+	jr	crtupd		;; f014: 18 d2       ..
 
 Lf016:	bitx	0,+2		;; f016: dd cb 02 46 ...F
 	rz			;; f01a: c8          .
-	mvix	000h,+1		;; f01b: dd 36 01 00 .6..
-	jr	Lefe8		;; f01f: 18 c7       ..
+	mvix	0,+1		;; f01b: dd 36 01 00 .6..
+	jr	crtupd		;; f01f: 18 c7       ..
 
 curup:	xra	a		;; f021: af          .
 	cmpx	+1		;; f022: dd be 01    ...
 	jrnc	Lf02c		;; f025: 30 05       0.
 Lf027:	dcrx	+1		;; f027: dd 35 01    .5.
-	jr	Lefe8		;; f02a: 18 bc       ..
+	jr	crtupd		;; f02a: 18 bc       ..
 
 Lf02c:	bitx	0,+2		;; f02c: dd cb 02 46 ...F
 	rz			;; f030: c8          .
-	lda	Lf512		;; f031: 3a 12 f5    :..
-	sta	Lf50d		;; f034: 32 0d f5    2..
-	jr	Lefe8		;; f037: 18 af       ..
+	lda	crtstr+6	;; f031: 3a 12 f5    :..
+	sta	crtstr+1	;; f034: 32 0d f5    2..
+	jr	crtupd		;; f037: 18 af       ..
 
 ; carriage return (possible auto-linefeed)
-Lf039:	mvix	000h,+0		;; f039: dd 36 00 00 .6..
+; A=CR
+Lf039:	mvix	0,+0		;; f039: dd 36 00 00 .6..
 	bitx	2,+2		;; f03d: dd cb 02 56 ...V
-	jrz	Lefe8		;; f041: 28 a5       (.
-Lf043:	lda	Lf50d		;; f043: 3a 0d f5    :..
+	jrz	crtupd		;; f041: 28 a5       (.
+Lf043:	lda	crtstr+1	;; f043: 3a 0d f5    :..
 	cmpx	+6		;; f046: dd be 06    ...
 	jnc	Lef7d		;; f049: d2 7d ef    .}.
 	jmp	Lef65		;; f04c: c3 65 ef    .e.
 
-Lf04f:	resx	0,+2		;; f04f: dd cb 02 86 ....
+Lf04f:	resx	0,+2	; ESC I - turn off screen wrap?
 clrscr:	mvi	a,004h	; off, ena RAM
 	out	CRT_CTL		;; f055: d3 62       .b
-	lda	Lf517		;; f057: 3a 17 f5    :..
-	sta	Lf515		;; f05a: 32 15 f5    2..
+	lda	crtstr+11	;; f057: 3a 17 f5    :..
+	sta	crtstr+9	;; f05a: 32 15 f5    2..
 	xra	a		;; f05d: af          .
-	sta	Lf516		;; f05e: 32 16 f5    2..
+	sta	crtstr+10	;; f05e: 32 16 f5    2..
 	call	Lf19e		;; f061: cd 9e f1    ...
 	di			;; f064: f3          .
 	mvi	a,0cfh	; intr, ctr, falling, TC, reset
@@ -2565,14 +2571,14 @@ clrscr:	mvi	a,004h	; off, ena RAM
 	mvi	e,007h		;; f079: 1e 07       ..
 Lf07b:	call	Lf1a9		;; f07b: cd a9 f1    ...
 curhom:	lxi	h,0		;; f07e: 21 00 00    ...
-	shld	Lf50c		;; f081: 22 0c f5    "..
-	jmp	Lefe8		;; f084: c3 e8 ef    ...
+	shld	crtstr+0	;; f081: 22 0c f5    "..
+	jmp	crtupd		;; f084: c3 e8 ef    ...
 
-revidx:	lda	Lf50d	; cursor row...
+revidx:	lda	crtstr+1	; cursor row...
 	ora	a		;; f08a: b7          .
 	jrnz	Lf027	; OK to decr
 	; must scroll backwards...
-Lf08d:	lda	Lf516		;; f08d: 3a 16 f5    :..
+Lf08d:	lda	crtstr+10	;; f08d: 3a 16 f5    :..
 	ora	a		;; f090: b7          .
 	jrz	Lf098	; at top row?
 	dcrx	+10		;; f093: dd 35 0a    .5.
@@ -2581,7 +2587,7 @@ Lf08d:	lda	Lf516		;; f08d: 3a 16 f5    :..
 Lf098:	mvix	24,+10		;; f098: dd 36 0a 18 .6..
 	jr	Lf0ae		;; f09c: 18 10       ..
 
-Lf09e:	lda	Lf516		;; f09e: 3a 16 f5    :..
+Lf09e:	lda	crtstr+10	;; f09e: 3a 16 f5    :..
 	cpi	24		;; f0a1: fe 18       ..
 	jrnc	Lf0aa		;; f0a3: 30 05       0.
 	inrx	+10		;; f0a5: dd 34 0a    .4.
@@ -2604,14 +2610,15 @@ Lf0cb:	ldx	a,+1		;; f0cb: dd 7e 01    .~.
 	call	crtadr0		;; f0ce: cd f7 f1    ...
 	lxi	b,(1 shl 8)+80	;; f0d1: 01 50 01    .P.
 	call	Lf1a4		;; f0d4: cd a4 f1    ...
-	jmp	Lefe8		;; f0d7: c3 e8 ef    ...
+	jmp	crtupd		;; f0d7: c3 e8 ef    ...
 
 ; alternate vert. blanking interrupt...
 ; on-shot, only triggers when something changes
+; CRT_ROW naturally stays in-sync?
 Lf0da:	push	psw		;; f0da: f5          .
-	lda	Lf516		;; f0db: 3a 16 f5    :..
+	lda	crtstr+10	;; f0db: 3a 16 f5    :..
 	out	CRT_ROW		;; f0de: d3 64       .d
-	lda	Lf51c		;; f0e0: 3a 1c f5    :..
+	lda	crtstr+16	;; f0e0: 3a 1c f5    :..
 	out	CRT_HUE		;; f0e3: d3 63       .c
 	mvi	a,003h	; disable intr
 	out	CTC1_3		;; f0e7: d3 23       .#
@@ -2621,21 +2628,22 @@ reti1:	pop	psw		;; f0e9: f1          .
 
 ; vert. blanking in graphics mode. no pages...
 ; same as Jr80 CTC ch1 - fires continuously
+; CRT_ADR must be re-set every frame
 Lf0ed:	push	psw		;; f0ed: f5          .
 	xra	a		;; f0ee: af          .
 	out	CRT_ADR		;; f0ef: d3 60       .`
 	jr	reti1		;; f0f1: 18 f6       ..
 
-escseq:	mvix	001h,+4		;; f0f3: dd 36 04 01 .6..
+escseq:	mvix	1,+4		;; f0f3: dd 36 04 01 .6..
 	ret			;; f0f7: c9          .
 
 ; ESC prefix
 Lf0f8:	dcr	a		;; f0f8: 3d          =
-	jrz	Lf104	; first char
+	jrz	Lf104	; first char after ESC
 	dcr	a		;; f0fb: 3d          =
-	jrz	Lf11d	; 2 ???
+	jrz	Lf11d	; 2 = ESC Y x
 	dcr	a		;; f0fe: 3d          =
-	jrz	Lf136	; 3 ???
+	jrz	Lf136	; 3  = EXC Y R x
 	mvi	m,0	; clear ESC count
 	ret			;; f103: c9          .
 
@@ -2651,47 +2659,48 @@ Lf111:	lxi	h,Lf2f3		;; f111: 21 f3 f2    ...
 	lxi	d,Lf300		;; f117: 11 00 f3    ...
 	jmp	Lf190		;; f11a: c3 90 f1    ...
 
-Lf11d:	mvi	m,3		;; f11d: 36 03       6.
+Lf11d:	mvi	m,3	; next is 3
 	mov	a,c		;; f11f: 79          y
 	sui	' '		;; f120: d6 20       . 
 	bitx	4,+3		;; f122: dd cb 03 66 ...f
 	jrnz	Lf12f	; ESC 1 case...
-	call	Lf236		;; f128: cd 36 f2    .6.
-	sta	Lf50d		;; f12b: 32 0d f5    2..
+	call	Lf236	; normalize row
+	sta	crtstr+1; row
 	ret			;; f12e: c9          .
 
-Lf12f:	call	Lf22e	; normalize col
-	sta	Lf50c	; save new col
+Lf12f:	call	Lf22e		; normalize col
+	sta	crtstr+0	; save new col
 	ret			;; f135: c9          .
 
-Lf136:	mvi	m,0		;; f136: 36 00       6.
+Lf136:	mvi	m,0	; done with ESC
 	mov	a,c		;; f138: 79          y
 	sui	' '		;; f139: d6 20       . 
 	bitx	4,+3		;; f13b: dd cb 03 66 ...f
 	jrz	Lf14a		;; f13f: 28 09       (.
 	; ESC 1 case...
-	call	Lf236		;; f141: cd 36 f2    .6.
-	sta	Lf50d		;; f144: 32 0d f5    2..
-	jmp	Lefe8		;; f147: c3 e8 ef    ...
+	call	Lf236		; normalize row
+	sta	crtstr+1	; row
+	jmp	crtupd		;; f147: c3 e8 ef    ...
 
-Lf14a:	call	Lf22e		;; f14a: cd 2e f2    ...
-	sta	Lf50c		;; f14d: 32 0c f5    2..
-	jmp	Lefe8		;; f150: c3 e8 ef    ...
+Lf14a:	call	Lf22e		; normalize col
+	sta	crtstr+0	; column
+	jmp	crtupd		;; f150: c3 e8 ef    ...
 
 Lf153:	mvi	a,010h		;; f153: 3e 10       >.
-	jr	Lf165		;; f155: 18 0e       ..
+	jr	crttgl		;; f155: 18 0e       ..
 
 Lf157:	mvi	a,001h		;; f157: 3e 01       >.
-	jr	Lf165		;; f159: 18 0a       ..
+	jr	crttgl		;; f159: 18 0a       ..
 
 Lf15b:	mvi	a,002h		;; f15b: 3e 02       >.
-	jr	Lf165		;; f15d: 18 06       ..
+	jr	crttgl		;; f15d: 18 06       ..
 
 Lf15f:	mvi	a,040h		;; f15f: 3e 40       >@
-	jr	Lf165		;; f161: 18 02       ..
+	jr	crttgl		;; f161: 18 02       ..
 
 Lf163:	mvi	a,008h		;; f163: 3e 08       >.
-Lf165:	lxi	h,Lf50e		;; f165: 21 0e f5    ...
+; Toggle CRT mode bit at crtstr+2
+crttgl:	lxi	h,crtstr+2	;; f165: 21 0e f5    ...
 	xra	m		;; f168: ae          .
 	mov	m,a		;; f169: 77          w
 	ret			;; f16a: c9          .
@@ -2707,7 +2716,7 @@ revvid:	bitx	0,+3		;; f176: dd cb 03 46 ...F
 	rnz			;; f17a: c0          .
 	setx	0,+3		;; f17b: dd cb 03 c6 ....
 	; reverse video? xRGBxRGB background/foreground?
-Lf17f:	lxi	h,Lf517		;; f17f: 21 17 f5    ...
+Lf17f:	lxi	h,crtstr+11	;; f17f: 21 17 f5    ...
 	mov	a,m		;; f182: 7e          ~
 	ani	088h		;; f183: e6 88       ..
 	mov	c,a		;; f185: 4f          O
@@ -2734,7 +2743,7 @@ Lf190:	ccir			;; f190: ed b1       ..
 	pchl			;; f19d: e9          .
 
 ; clear screen
-Lf19e:	lhld	Lf518		;; f19e: 2a 18 f5    *..
+Lf19e:	lhld	crtstr+12	;; f19e: 2a 18 f5    *..
 	lxi	b,(24 shl 8)+80	;; f1a1: 01 50 18    .P.
 Lf1a4:	ldx	e,+11		;; f1a4: dd 5e 0b    .^.
 Lf1a7:	mvi	d,' '		;; f1a7: 16 20       . 
@@ -2750,7 +2759,7 @@ Lf1a9:	mov	m,d		;; f1a9: 72          r
 
 eraeol:	xra	a		;; f1b5: af          .
 Lf1b6:	push	psw		;; f1b6: f5          .
-	lda	Lf50c		;; f1b7: 3a 0c f5    :..
+	lda	crtstr+0	;; f1b7: 3a 0c f5    :..
 	bitx	2,+3		;; f1ba: dd cb 03 56 ...V
 	jrz	Lf1c1		;; f1be: 28 01       (.
 	add	a		;; f1c0: 87          .
@@ -2758,7 +2767,7 @@ Lf1c1:	mov	c,a		;; f1c1: 4f          O
 	mvi	a,80		;; f1c2: 3e 50       >P
 	sub	c		;; f1c4: 91          .
 	mov	c,a		;; f1c5: 4f          O
-	lhld	Lf513		;; f1c6: 2a 13 f5    *..
+	lhld	crtstr+7	;; f1c6: 2a 13 f5    *..
 Lf1c9:	mvi	b,001h		;; f1c9: 06 01       ..
 	call	Lf1a4		;; f1cb: cd a4 f1    ...
 	pop	psw		;; f1ce: f1          .
@@ -2774,14 +2783,14 @@ Lf1c9:	mvi	b,001h		;; f1c9: 06 01       ..
 	pop	d		;; f1dd: d1          .
 	jr	Lf1c9		;; f1de: 18 e9       ..
 
-Lf1e0:	lhld	Lf513		;; f1e0: 2a 13 f5    *..
+Lf1e0:	lhld	crtstr+7	;; f1e0: 2a 13 f5    *..
 	jmp	Leffc		;; f1e3: c3 fc ef    ...
 
-eraeop:	lhld	Lf50c		;; f1e6: 2a 0c f5    *..
+eraeop:	lhld	crtstr+0	;; f1e6: 2a 0c f5    *..
 	mov	a,l		;; f1e9: 7d          }
 	ora	h		;; f1ea: b4          .
 	jz	clrscr		;; f1eb: ca 53 f0    .S.
-	lda	Lf512		;; f1ee: 3a 12 f5    :..
+	lda	crtstr+6	;; f1ee: 3a 12 f5    :..
 	subx	+1		;; f1f1: dd 96 01    ...
 	inr	a		;; f1f4: 3c          <
 	jr	Lf1b6		;; f1f5: 18 bf       ..
@@ -2792,7 +2801,7 @@ crtadr0:	; compute address of line
 crtadr:	bitx	2,+3		;; f1f9: dd cb 03 56 ...V
 	jrz	Lf201		;; f1fd: 28 02       (.
 	slar	e		;; f1ff: cb 23       .#
-Lf201:	addx	+10	; some row on CRT
+Lf201:	addx	+10	; "home" row on CRT
 	mov	d,a		;; f204: 57          W
 	add	a		;; f205: 87          .
 	add	a		;; f206: 87          .
@@ -2807,11 +2816,11 @@ Lf201:	addx	+10	; some row on CRT
 	dad	d	; +col
 	dad	h	; *2 (attr, 2 byte/cell)
 Lf212:	xchg			;; f212: eb          .
-	lxi	h,-4000		;; f213: 21 60 f0    .`.
+	lxi	h,-4000	; wrap-point for addresses (25*80)*2
 	dad	d		;; f216: 19          .
 	jrnc	Lf21a		;; f217: 30 01       0.
 	xchg			;; f219: eb          .
-Lf21a:	lhld	Lf518		;; f21a: 2a 18 f5    *..
+Lf21a:	lhld	crtstr+12	;; f21a: 2a 18 f5    *..
 	dad	d		;; f21d: 19          .
 	ret			;; f21e: c9          .
 
@@ -2820,17 +2829,17 @@ Lf21f:	setx	4,+3		;; f21f: dd cb 03 e6 ....
 
 ; ESC Y (cursor addressing?)
 Lf225:	resx	4,+3		;; f225: dd cb 03 a6 ....
-Lf229:	mvix	002h,+4		;; f229: dd 36 04 02 .6..
+Lf229:	mvix	2,+4		;; f229: dd 36 04 02 .6..
 	ret			;; f22d: c9          .
 
 Lf22e:	cmpx	+5	; check max col
 	rc			;; f231: d8          .
-	lda	Lf511	; use max col
+	lda	crtstr+5	; use max col
 	ret			;; f235: c9          .
 
-Lf236:	cmpx	+6		;; f236: dd be 06    ...
+Lf236:	cmpx	+6	; check max row
 	rc			;; f239: d8          .
-	lda	Lf512		;; f23a: 3a 12 f5    :..
+	lda	crtstr+6	; force max row
 	ret			;; f23d: c9          .
 
 ; beep the speaker
@@ -2852,7 +2861,7 @@ prtscr:	pop	h		;; f251: e1          .
 	lhld	crtsav		;; f256: 2a f0 fd    *..
 	shld	pscsav		;; f259: 22 ca f2    "..
 	lxi	sp,pscstk	;; f25c: 31 ca f2    1..
-	lda	Lf51a		;; f25f: 3a 1a f5    :..
+	lda	crtstr+14	;; f25f: 3a 1a f5    :..
 	out	CRT_CTL		;; f262: d3 62       .b
 	call	ticfin		;; f264: cd 46 ea    .F.
 	xra	a		;; f267: af          .
@@ -2865,7 +2874,7 @@ Lf272:	push	psw		;; f272: f5          .
 	push	b		;; f273: c5          .
 	push	d		;; f274: d5          .
 	call	crtadr	; compute CRT RAM addr
-	lda	Lf51a		;; f278: 3a 1a f5    :..
+	lda	crtstr+14	;; f278: 3a 1a f5    :..
 	setb	2,a	; enable access CRT RAM
 	di			;; f27d: f3          .
 	out	CRT_CTL		;; f27e: d3 62       .b
@@ -2919,10 +2928,10 @@ Lf2f1:	dw	escseq	; ESC
 
 Lf2f3:	db	'1289I'	; ESC commands...
 	dw	Lf21f	; ESC 1 col row
-	dw	Lf157	; ESC 2
-	dw	Lf153	; ESC 8
-	dw	Lf163	; ESC 9
-Lf300:	dw	Lf04f	; ESC I
+	dw	Lf157	; ESC 2 - toggle line wrap
+	dw	Lf153	; ESC 8	- toggle ?era 12 lines?
+	dw	Lf163	; ESC 9 - toggle scroll lock
+Lf300:	dw	Lf04f	; ESC I - re-init? reset?
 
 ; alternate/advanced CRT control codes
 Lf302:	db	BEL,BS,TAB,LF,VT,FF,CR,SO,SI,NAK,SYN,ETB,CAN,EM,SUB,ESC
@@ -2962,7 +2971,7 @@ Lf357:	dw	prtscr	; ESC | - print screen
 
 ; ext. function... B=func? C=data?
 extfnc:	pushix			;; f359: dd e5       ..
-	lxix	Lf50c		;; f35b: dd 21 0c f5 ....
+	lxix	crtstr		;; f35b: dd 21 0c f5 ....
 	mov	a,b		;; f35f: 78          x
 	ora	a		;; f360: b7          .
 	jz	Lf408	; func 0 - CRT modes?
@@ -2986,24 +2995,24 @@ crtpag:	bitx	1,+14		;; f37b: dd cb 0e 4e ...N
 	ani	003h		;; f382: e6 03       ..
 	mov	c,a		;; f384: 4f          O
 	ldx	e,+18		;; f385: dd 5e 12    .^.
-	sta	Lf51e	; 000000xx
+	sta	crtstr+18	; 000000xx
 	rrc			;; f38b: 0f          .
 	rrc			;; f38c: 0f          .
-	sta	Lf51c	; xx000000 - for hardware
+	sta	crtstr+16	; xx000000 - for hardware
 	rrc			;; f390: 0f          .
 	rrc			;; f391: 0f          .
 	ori	HIGH crtram	; 01xx0000 - for s/w
-	sta	Lf518+1		;; f394: 32 19 f5    2..
-	lxi	h,Lf51f		;; f397: 21 1f f5    ...
+	sta	crtstr+13	;; f394: 32 19 f5    2..
+	lxi	h,crtstr+19	;; f397: 21 1f f5    ...
 	mvi	d,0		;; f39a: 16 00       ..
 	mov	b,d		;; f39c: 42          B
 	dad	d		;; f39d: 19          .
-	lda	Lf516	; current row...
+	lda	crtstr+10	; current row...
 	mov	m,a	; save it
 	dsbc	d		;; f3a2: ed 52       .R
 	dad	b		;; f3a4: 09          .
 	mov	a,m	; new row...
-	sta	Lf516	; set it
+	sta	crtstr+10	; set it
 	di			;; f3a9: f3          .
 	mvi	a,0cfh	; intr, ctr, falling, TC, reset
 	out	CTC1_3		;; f3ac: d3 23       .#
@@ -3028,7 +3037,7 @@ Lf3c6:	rlc		; replicate 000000xx in all positions
 	rlc			;; f3c7: 07          .
 	add	c		;; f3c8: 81          .
 	djnz	Lf3c6		;; f3c9: 10 fb       ..
-	sta	Lf51b		;; f3cb: 32 1b f5    2..
+	sta	crtstr+15	;; f3cb: 32 1b f5    2..
 	jr	ixret3		;; f3ce: 18 a8       ..
 
 ; func 11 - set background?
@@ -3036,7 +3045,7 @@ Lf3d0:	bitx	1,+14		;; f3d0: dd cb 0e 4e ...N
 	jrz	ixret3		;; f3d4: 28 a2       (.
 	mov	a,c		;; f3d6: 79          y
 	ani	00111111b	;; f3d7: e6 3f       .?
-	sta	Lf51c		;; f3d9: 32 1c f5    2..
+	sta	crtstr+16	;; f3d9: 32 1c f5    2..
 	out	CRT_HUE		;; f3dc: d3 63       .c
 	jr	ixret3		;; f3de: 18 98       ..
 
@@ -3111,8 +3120,8 @@ Lf449:	lxi	b,9		;; f449: 01 09 00    ...
 	lxi	b,9		;; f454: 01 09 00    ...
 	ldir			;; f457: ed b0       ..
 	xra	a		;; f459: af          .
-	sta	Lf51c		;; f45a: 32 1c f5    2..
-	sta	Lf51e		;; f45d: 32 1e f5    2..
+	sta	crtstr+16	;; f45a: 32 1c f5    2..
+	sta	crtstr+18	;; f45d: 32 1e f5    2..
 	lxi	h,Lf0da		;; f460: 21 da f0    ...
 	shld	Lde86		;; f463: 22 86 de    "..
 	lxi	h,Leebf		;; f466: 21 bf ee    ...
@@ -3158,20 +3167,20 @@ Lf4ad:	push	h		;; f4ad: e5          .
 	jrz	ixret2		;; f4b4: 28 e1       (.
 	call	Lf4c8		;; f4b6: cd c8 f4    ...
 	mov	a,b		;; f4b9: 78          x
-	sta	Lf51c		;; f4ba: 32 1c f5    2..
+	sta	crtstr+16	;; f4ba: 32 1c f5    2..
 	out	CRT_HUE		;; f4bd: d3 63       .c
 	lhld	Lf508		;; f4bf: 2a 08 f5    *..
 	lded	Lf50a		;; f4c2: ed 5b 0a f5 .[..
 	jr	Lf46c		;; f4c6: 18 a4       ..
 
-Lf4c8:	sta	Lf51a	; set new CRT mode
-	shld	Lf50e	; and flags
+Lf4c8:	sta	crtstr+14	; set new CRT mode
+	shld	crtstr+2	; and flags
 	lxi	h,0		;; f4ce: 21 00 00    ...
-	shld	Lf50c		;; f4d1: 22 0c f5    "..
+	shld	crtstr+0	;; f4d1: 22 0c f5    "..
 	mvi	h,HIGH crtram	; CRT RAM at 04000h...
-	shld	Lf518		;; f4d6: 22 18 f5    "..
-	shld	Lf513		;; f4d9: 22 13 f5    "..
-	sded	Lf511	; max row/col
+	shld	crtstr+12	;; f4d6: 22 18 f5    "..
+	shld	crtstr+7	;; f4d9: 22 13 f5    "..
+	sded	crtstr+5	; max row/col
 	stx	c,+17		;; f4e0: dd 71 11    .q.
 	ret			;; f4e3: c9          .
 
@@ -3196,50 +3205,51 @@ Lf508:	dw	0
 Lf50a:	dw	0
 
 ; CRT display variables?
-Lf50c:	db	0	; +0 column (cursor)
-Lf50d:	db	0	; +1 row (cursor)
-Lf50e:	db	10000010b	; +2 modes
-;               ^^^^^^^+-
-;               ||||||+-- wrap?
-;               |||||+---
-;               ||||+----
-;               |||+-----
-;               ||+------ ???
-;               |+-------
-;               +--------
-	db	00010010b	; +3 modes
-;               ^^^^^^^+-
-;               ||||||+--
-;               |||||+---
-;               ||||+----
-;               |||+-----
-;               ||+------ NAK/ESC-C active
-;               |+-------
-;               +--------
-Lf510:	db	0	; +4 ESC flag?
-Lf511:	db	79	; +5 max disp col
-Lf512:	db	23	; +6 max disp row
-Lf513:	dw	crtram	; +7,+8 cursor RAM addr
-Lf515:	db	7	; +9
-Lf516:	db	0	; +10 CRT row of top of screen - CRT_ROW
-Lf517:	db	7	; +11 cur active attrs
-Lf518:	dw	crtram	; +12,+13 CRT RAM home addr - curr page
-Lf51a:	db	00101001b ; +14 CRT ctl mode? 640x200, on, 80x25
-Lf51b:	db	0	; +15
-Lf51c:	db	0	; +16 attrs - CRT_HUE
+crtstr:
+	db	0	; +0 column (cursor)
+	db	0	; +1 row (cursor)
+	db	10000010b	; +2 modes (user)
+;               ; 0 - wrap screen?
+;               ; 1 - * wrap line
+;               ; 2 -
+;               ; 3 - scroll lock
+;               ; 4 - ? erase 12 lines?
+;               ; 5 - cursor off
+;               ; 6 - 8-bit chars?
+;               ; 7 - *
+	db	00010010b	; +3 modes (internal)
+;               ; 0 -
+;               ; 1 - *
+;               ; 2 -
+;               ; 3 -
+;               ; 4 - *
+;               ; 5 - NAK/ESC-C active
+;               ; 6 -
+;               ; 7 -
+	db	0	; +4 ESC flag?
+	db	79	; +5 max disp col
+	db	23	; +6 max disp row
+	dw	crtram	; +7,+8 cursor RAM addr
+	db	7	; +9 saved/cached mode for +7
+	db	0	; +10 CRT row of top of screen - CRT_ROW (0-24)
+	db	7	; +11 cur active attrs
+	dw	crtram	; +12,+13 - curr page CRT RAM addr
+	db	00101001b ; +14 CRT_CTL mode? 640x200, on, 80x25
+	db	0	; +15
+	db	0	; +16 attrs - CRT_HUE
 	db	8	; +17
-Lf51e:	db	0	; +18
-Lf51f:	db	0,0,0,0	; +19,+20,+21,+22 ; save space for Lf516
+	db	0	; +18
+	db	0,0,0,0	; +19,+20,+21,+22 ; txt pgs save for crtstr+10
 
 ; CRT graphics handling?
 ; (HL)=pixel column address
 ; (DE)=pixel row address
 ; C=function
-Lf523:	push	d		;; f523: d5          .
+grphcs:	push	d		;; f523: d5          .
 	mov	e,m		;; f524: 5e          ^
 	inx	h		;; f525: 23          #
 	mov	d,m		;; f526: 56          V
-	lda	Lf51a		;; f527: 3a 1a f5    :..
+	lda	crtstr+14	;; f527: 3a 1a f5    :..
 	bit	4,a	; 640x200? (320x200)
 	lxi	h,-320		;; f52c: 21 c0 fe    ...
 	jrz	Lf532		;; f52f: 28 01       (.
@@ -3269,10 +3279,10 @@ Lf532:	dad	d		;; f532: 19          .
 	dad	h		;; f550: 29          )
 	dad	h	; *80
 	xthl		; TOS=column, HL=row
-	lda	Lf51a		;; f553: 3a 1a f5    :..
+	lda	crtstr+14	;; f553: 3a 1a f5    :..
 	bit	4,a		;; f556: cb 67       .g
 	jrnz	Lf578	; if 640x200
-	lda	Lf51b		;; f55a: 3a 1b f5    :..
+	lda	crtstr+15	;; f55a: 3a 1b f5    :..
 	ani	003h		;; f55d: e6 03       ..
 	mov	d,a	; D=
 	mvi	a,003h	; 4 pixels per column?
@@ -3315,7 +3325,7 @@ Lf588:	srlr	d		;; f588: cb 3a       .:
 	dad	d		;; f592: 19          .
 	pop	d		;; f593: d1          .
 	di			;; f594: f3          .
-	lda	Lf51a		;; f595: 3a 1a f5    :..
+	lda	crtstr+14	;; f595: 3a 1a f5    :..
 	setb	2,a		;; f598: cb d7       ..
 	out	CRT_CTL		;; f59a: d3 62       .b
 	mov	b,m		;; f59c: 46          F
@@ -3331,7 +3341,7 @@ Lf588:	srlr	d		;; f588: cb 3a       .:
 	ana	b	; C=3 - set value D
 	ora	d		;; f5aa: b2          .
 Lf5ab:	mov	m,a		;; f5ab: 77          w
-Lf5ac:	lda	Lf51a		;; f5ac: 3a 1a f5    :..
+Lf5ac:	lda	crtstr+14	;; f5ac: 3a 1a f5    :..
 	out	CRT_CTL		;; f5af: d3 62       .b
 	ei			;; f5b1: fb          .
 	lspd	crtsav		;; f5b2: ed 7b f0 fd .{..
@@ -3386,14 +3396,14 @@ Lf5d5:	di			;; f5d5: f3          .
 	mvi	c,CTC1_0	;; f5e8: 0e 20       . 
 	outp	d	;05fh - di, ctr, rising, TC, reset
 	mvi	a,000h		;; f5ec: 3e 00       >.
-	outp	a	;000h - TC=256
-	mvi	a,080h		;; f5f0: 3e 80       >.
+	outp	a	;000h - TC=256 - from 307.18KHz
+	mvi	a,080h	; 1.2KHz
 	outp	a	;080h - intvec 80/82/84/86
 	inr	c	;CTC1_1
 	mvi	a,0dfh	; ei, ctr, rising, TC, reset
 	outp	a	;0dfh	;; f5f7: ed 79       .y
-	mvi	a,078h	; TC=120 - if CRT VB then 2 sec?
-	outp	a	; 120Hz? 60Hz? 50Hz?
+	mvi	a,078h	; TC=120 - from ch0
+	outp	a	; 10Hz
 	inr	c	;CTC1_2
 	inr	c	;CTC1_3
 	inr	c	;CTC2_0
@@ -3427,9 +3437,9 @@ Lf5d5:	di			;; f5d5: f3          .
 	;
 	mvi	a,089h	; A mode0 out, B mode0 out, C input
 	out	PP_CTL		;; f631: d3 03       ..
-	mvi	a,PPA_D4	;; f633: 3e 10       >.
+	mvi	a,PPA_SPG	;; f633: 3e 10       >.
 	out	PP_A		;; f635: d3 00       ..
-	mvi	a,PPB_KRS	;; f637: 3e 02       >.
+	mvi	a,PPB_KRS	; enable kbd
 	out	PP_B		;; f639: d3 01       ..
 	; another CTC??? or PIO?
 	mvi	a,04fh	; mode 1 input
@@ -3509,15 +3519,15 @@ Lf6a5:	mvi	a,10111111b	; CON:=UC1: RDR:=UR2: PUN:=UP2: LST:=LPT:
 	shld	Le922		;; f6cb: 22 22 e9    "".
 	shld	Le932		;; f6ce: 22 32 e9    "2.
 	exaf			;; f6d1: 08          .
-	; perform PC kbd reset pulse
+	; perform PC kbd clear-out...
 	in	PP_B		;; f6d2: db 01       ..
-	ani	NOT PPB_KRS	;; f6d4: e6 fd       ..
+	ani	NOT PPB_KRS	; disable kbd
 	out	PP_B		;; f6d6: d3 01       ..
 	lxi	b,2048	; delay some time
 Lf6db:	dcr	c		;; f6db: 0d          .
 	jrnz	Lf6db		;; f6dc: 20 fd        .
 	djnz	Lf6db		;; f6de: 10 fb       ..
-	ori	PPB_KRS		;; f6e0: f6 02       ..
+	ori	PPB_KRS		; re-enable kbd
 	out	PP_B		;; f6e2: d3 01       ..
 	;
 	exaf			;; f6e4: 08          .
@@ -3735,7 +3745,7 @@ Lfd0a:	ds	1
 Lfd0b:	ds	1	; num sides
 cursid:	ds	1
 
-Lfd0d:	ds	4	; motor/access timeouts for each drive
+fdcmtr:	ds	4	; motor/access timeouts for each drive
 Lfd11:	ds	1	; enable/prescale for ticcnt tick counter
 			;
 Lfd12:	ds	1	; saved value for Lfd11 during ramdisk I/O
