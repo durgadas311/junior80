@@ -9,7 +9,7 @@ xputcon	macro
 ; I/O ports
 PP_A	equ	0	; i8255 port A (PC kbd)
 PP_B	equ	1	; i8255 port B (sys cfg dipsw)
-PP_C	equ	2	; i8255 port C
+PP_C	equ	2	; i8255 port C - sys ctl
 PP_CTL	equ	3	; i8255 control
 
 DMA_0A	equ	30h	; ch0 addr
@@ -427,7 +427,7 @@ sioin:	in	SIO_BC		;; 0245: db 13       ..
 	ret			;; 024c: c9          .
 
 ; PC Keyboard interrupt (scan codes)
-kb1int:	push	psw		;; 024d: f5          .
+pckbint:	push	psw		;; 024d: f5          .
 	push	h		;; 024e: e5          .
 	push	b		;; 024f: c5          .
 	in	PP_A	; get key code
@@ -480,7 +480,7 @@ L02c0:	mov	a,m		;; 02c0: 7e          ~
 	ret			;; 02c2: c9          .
 
 ; ASCII Keyboard interrupt - no translation
-kb2int:	push	psw		;; 02c3: f5          .
+akbint:	push	psw		;; 02c3: f5          .
 	in	PIO_A		;; 02c4: db 50       .P
 	push	h		;; 02c6: e5          .
 	lxi	h,0ff5bh	;; 02c7: 21 5b ff    .[.
@@ -1123,9 +1123,9 @@ vertbl:	push	psw		;; 07b5: f5          .
 intvec:
 intv0:	dw	nulint	; xxF0: CTC 0: null intr
 intv1:	dw	vertbl	; xxF2: CTC 1: video event? vert. blanking?
-intv2:	dw	kb1int	; xxF4: CTC 2: parallel keyboard (PP_A)
+intv2:	dw	pckbint	; xxF4: CTC 2: parallel keyboard (PP_A)
 intv3:	dw	fdcint	; xxF6: CTC 3: FDC complete?
-intv4:	dw	kb2int	; xxF8: PIO A: alt kbd
+intv4:	dw	akbint	; xxF8: PIO A: alt kbd
 intv5:	dw	nulint	; xxFA: PIO B: null intr
 	dw	-1	; xxFC
 	dw	-1	; xxFE

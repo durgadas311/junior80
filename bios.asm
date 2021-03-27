@@ -1,4 +1,4 @@
-; Disassembly of TPD801.TD0 boot tracks, BIOS image.
+; Prospective BIOS for Junior-80
 VERS	equ	270
 
 	maclib	z80
@@ -10,37 +10,26 @@ bdos	equ	0005h
 tpa	equ	0100h
 
 ; I/O ports
-; i8255?
-PP_A	equ	0	; RAM bank bits 0-2
-PP_B	equ	1	; PC keyboard reset
-PP_C	equ	2	; parallel printer config
+; i8255
+PP_A	equ	0	; in: PC keyboard data
+PP_B	equ	1	; in: sys cfg dipsw + parallel status
+PP_C	equ	2	; out: sys ctl + parallel ctl + spkr
 PP_CTL	equ	3
-;
+; Z80-SIO
 SIO_A	equ	10h
 SIO_B	equ	11h
 SIO_AC	equ	12h
 SIO_BC	equ	13h
-
-CTC1_0	equ	20h	; 307.18KHz
-CTC1_1	equ	21h	; CTC1_0 TC (1.2KHz)
-CTC1_2	equ	22h	; not used? (L2)
-CTC1_3	equ	23h	; vert retrace intr
-; corresponds to Jr80 CTC @ 20h?
-; at least for FDC intr.
-CTC2_0	equ	24h	; not used? (L10)
-CTC2_1	equ	25h	; not used? (L11)
-CTC2_2	equ	26h	; CTC2_0 TC (1.2KHz)
-CTC2_3	equ	27h	; FDC intr
-; i8253 - same as Jr80 at 70h?
-CTR_0	equ	28h	; baud (9600) @1.2288MHz
-CTR_1	equ	29h	; baud (9600) @1.2288MHz
-CTR_2	equ	2ah	; sound (951 = 1292Hz) @1.2288MHz
-CTR_C	equ	2bh
-;
-PIO1_A	equ	2ch	; PC keyboard (scan codes)
-PIO1_B	equ	2dh	; system config dipswitch
-PIO1_AC	equ	2eh
-PIO1_BC	equ	2fh
+; Z80-CTC
+CTC_0	equ	20h	; 250KHz
+CTC_1	equ	21h	; vert. blanking
+CTC_2	equ	22h	; kbd intr
+CTC_3	equ	23h	; FDC intr
+; i8253 - 
+CTR_0	equ	70h	; baud (9600) @1.2288MHz
+CTR_1	equ	71h	; baud (9600) @1.2288MHz
+CTR_2	equ	72h	; sound (951 = 1292Hz) @1.2288MHz
+CTR_C	equ	73h
 ;
 DMA_0A	equ	30h	; ch0 addr
 DMA_0C	equ	31h	; ch0 count (-1)
@@ -52,20 +41,21 @@ DMA_3A	equ	36h	; ch3 addr
 DMA_3C	equ	37h	; ch3 count (-1)
 DMA_CTL	equ	38h	;
 
-; FDC - same as Jr80?
+; FDC - i8272
 FDC_STS	equ	40h
 FDC_DAT	equ	41h
-FDC_CTL	equ	42h	; Jr80 uses 48h
-; same as Jr80?
-PIO2_A	equ	50h	; input - ASCII keyboard
-PIO2_B	equ	51h	; parallel printer data
-PIO2_AC	equ	52h
-PIO2_BC	equ	53h
-; similar to Jr80 4a-4f?
-CRT_ADR	equ	60h	; for graphics mode - start addr (0)
-CRT_CTL	equ	62h
-CRT_HUE	equ	63h	; how used?
-CRT_ROW	equ	64h	; text mode top row of screen
+FDC_CTL	equ	48h
+
+; Z80-PIO
+PIO_A	equ	50h	; input - ASCII keyboard
+PIO_B	equ	51h	; output - parallel printer data
+PIO_AC	equ	52h
+PIO_BC	equ	53h
+;
+CRT_ADR	equ	49h	; for graphics mode - start addr (0)
+CRT_CTL	equ	4ah
+CRT_HUE	equ	4bh	; how used?
+CRT_ROW	equ	4ch	; text mode top row of screen
 
 ; DMAC count reg high bits
 DMA_RD	equ	80h
@@ -81,17 +71,16 @@ MTR_DS2	equ	04h
 MTR_DS3	equ	08h
 
 ; config dipswitch bits
-CFG_SER	equ	00000001b	; 1 = serial console
-CFG_PCK	equ	00000010b	; 1 = PC keyboard (scan codes)
-CFG_RD	equ	00100000b	; 1 = ramdisk
-CFG_523	equ	01000000b	; 1 = 5.25" floppy drives DS2/DS3
-CFG_501	equ	10000000b	; 1 = 5.25" floppy drives DS0/DS1
+CFG_SER	equ	00000100b	; 1 = serial console
+CFG_PCK	equ	00001000b	; 1 = PC keyboard (scan codes)
+CFG_823	equ	00000010b	; 1 = 8" floppy drives DS2/DS3
+CFG_801	equ	00000001b	; 1 = 8" floppy drives DS0/DS1
 
-PPA_BNK	equ	00000111b	; mask for memory bank select
-PPA_SPG	equ	00010000b	; enable speaker clock (SPKGT)
-PPA_SPK	equ	00100000b	; enable speaker sound (SPKDT)
-
-PPB_KRS	equ	00000010b	; PC kbd disable (0=disable)
+PPC_SPG	equ	01000000b	; enable speaker clock (SPKGT)
+PPC_SPK	equ	10000000b	; enable speaker sound (SPKDT)
+PPC_64K	equ	00000000b	; 64K RAM enabled
+PPC_ROM	equ	00000001b	; 56K RAM + ROM
+PPC_KRS	equ	00000010b	; PC kbd disable (0=disable)
 
 crtram	equ	4000h
 ramwin	equ	4000h	; banked RAM window, 32K length
@@ -169,7 +158,7 @@ wboote:	jmp	wboot
 
 	dw	extdat	; 0x33, wboote+48
 	; 11-char ID string, 0x35, wboote+50
-	db	'Tpd '
+	db	'j80 '
 	db	((VERS/100) MOD 10)+'0'
 	db	'.'
 	db	((VERS/10) MOD 10)+'0'	; wboote+56
@@ -201,26 +190,27 @@ Lde51:	jmp	Leee7		; CRT mode 20h
 Lde6f:	db	0	; FDC_CTL port image
 
 ; interrupt vectors - 0x70, wboote+109 - use pointer below
-Lde70:	dw	nulint	; chB TxE
-	dw	bxtint	; chB Ext/sts change
-	dw	brxint	; chB RxA
-	dw	bspint	; chB Rx spc
-	dw	nulint	; chA TxE
-	dw	axtint	; chA Ext/sts change
-	dw	arxint	; chA RxA
-	dw	aspint	; chA Rx spc
-	dw	nulint	; xx80 - CTC1 ch0 - prescale for ch1
-	dw	tick	; xx82 - CTC1 ch1 - general timeout?
-	dw	nulint	; xx84 - CTC1 ch2
-Lde86:	dw	vertbl	; xx86 - CTC1 ch3 - video? ("NVIMT")
-	dw	nulint	; xx88 - CTC2 ch0
-	dw	nulint	; xx8a - CTC2 ch1
-	dw	nulint	; xx8c - CTC2 ch2
-	dw	fdcint	; xx8e - CTC2 ch3 FDC
-piovec:	dw	pckbint	; xx90 - PIO1 chA - PC keyboard (scan codes)
-	dw	nulint	; xx92
-p2avec:	dw	akbint	; xx94 - PIO chA - ASCII keyboard
-p2bvec:	dw	lptint	; xx96 - PIO chB - LPT: ready (intr)
+Lde70:
+siovec:	dw	nulint	; xx70 - chB TxE
+	dw	bxtint	; xx72 - chB Ext/sts change
+	dw	brxint	; xx74 - chB RxA
+	dw	bspint	; xx76 - chB Rx spc
+	dw	nulint	; xx78 - chA TxE
+	dw	axtint	; xx7a - chA Ext/sts change
+	dw	arxint	; xx7c - chA RxA
+	dw	aspint	; xx7e - chA Rx spc
+ctcvec:	dw	nulint	; xx80 - CTC ch0 - unused
+Lde86:	dw	vertbl	; xx82 - CTC ch1 - video
+	dw	pckbint	; xx84 - CTC ch2 - PC Keyboard
+	dw	fdcint	; xx86 - CTC ch3 - FDC
+piovec:	dw	pckbint	; xx88 - PIO chA - PC keyboard (scan codes)
+	dw	nulint	; xx8a - PIO chB - ???
+	dw	0	; xx8c
+	dw	0	; xx8e
+	dw	0	; xx90
+	dw	0	; xx92
+	dw	0	; xx94
+	dw	0	; xx96
 
 ; extended data pointers - 0x98, wboote+149
 extdat:	dw	Le920	; CON: input redir vectors
@@ -406,13 +396,13 @@ Ldfe9:	lda	Lfcfd
 	sta	Lfcfd
 	rz
 	ani	002h
-	mvi	b,CFG_501
+	mvi	b,CFG_801
 	jz	Ldffd
-	mvi	b,CFG_523
-Ldffd:	in	PIO1_B
+	mvi	b,CFG_823
+Ldffd:	in	PP_B
 	ana	b	; test drive type
-	jz	Le006
-	jmp	Le03a
+	jnz	Le006	; 8"
+	jmp	Le03a	; else 5.25"
 
 ; setup 8" drives
 Le006:	lxi	h,fd8fm0
@@ -751,8 +741,6 @@ Le268:	sta	wrflg
 	mov	a,c
 	sta	Lfce6
 	lda	Lfcdb
-	cpi	010h
-	jz	Le596
 	ora	a
 	jnz	Le2a0
 	call	Le3f5
@@ -1112,77 +1100,6 @@ lstst:	xra	a
 
 Le594:	xra	a
 	ret
-
-Le596:	lhld	dmaadr
-	lxi	d,winend+127
-	dad	d
-	jnc	Le608
-	lda	dmaadr+1
-	cpi	HIGH winend
-	jnc	Le608
-	lda	wrflg
-	ora	a
-	jnz	Le5c4
-	call	rdadr
-	xchg
-	mvi	a,8
-	call	Le5d3
-	lxi	d,rdbuf
-	mvi	c,128
-	lhld	dmaadr
-	xchg
-	ldir
-	ret
-
-Le5c4:	lhld	dmaadr
-	lxi	d,rdbuf
-	lxi	b,128
-	ldir
-	call	rdadr
-	xra	a
-Le5d3:	mov	b,a
-	lda	Lfd11
-	sta	Lfd12
-	mvi	a,002h	; prevent tick hook during I/O
-	sta	Lfd11
-	lda	curtrk	; a.k.a ramdisk bank number
-	adi	2	; reserved banks...
-	ora	b
-	mov	c,a
-	in	PP_A
-	ora	c
-	out	PP_A
-	; user TPA no longer valid...
-	lxi	b,128
-	ldir
-	ani	11110000b	; ENNMI off
-	out	PP_A
-	; user TPA safe again
-	jmp	ticfin
-
-; compute ramdisk address
-; returns HL=rdbuf, DE=sector address (within track/bank)
-rdadr:	lda	cursec
-	rar
-	mov	d,a
-	mvi	a,0
-	rar
-	mov	e,a
-	mov	a,d
-	adi	HIGH ramwin
-	mov	d,a
-	lxi	h,rdbuf
-	ret
-
-Le608:	call	rdadr
-	lhld	dmaadr
-	lda	wrflg
-	ora	a
-	mvi	a,0
-	jnz	Le5d3
-	xchg
-	mvi	a,8
-	jmp	Le5d3
 
 Le61d:	lda	Lfcd8
 	sta	Lfcfc
@@ -1809,7 +1726,7 @@ akbin:	call	kbdst
 ; ASCII keyboard physical input (intr)
 akbint:	push	psw
 	push	h
-	in	PIO2_A
+	in	PIO_A
 	ani	07fh
 	lxi	h,Lfd26
 	mvi	m,001h
@@ -1834,7 +1751,7 @@ pckbint:
 	push	h
 	push	b
 	push	d
-	in	PIO1_A	; scan code
+	in	PP_A	; scan code
 	mov	e,a
 	ani	07fh
 	lxi	b,00006h
@@ -1986,9 +1903,8 @@ Lebc1:	db	'!@#$%^&*()_+'	; (top row)
 	db	'<>?'
 	db	98h	; PRSC - print screen
 
-lptout:	in	PP_C
-Lebd9:	ani	060h	; BS1/BSENS
-	cpi	020h	; BS1=0, BSENS=1
+lptout:	in	PP_B
+	ani	10000000b	; BS1
 	jrnz	Lec0f	; LPT: not attached
 Lebdf:	lxi	d,0
 	mvi	b,10
@@ -2008,12 +1924,12 @@ Lebe7:	mov	a,m
 	jmp	cpm
 
 Lec03:	dcr	m	; set BUSY
-	in	PP_C
-	ani	010h	; BS0 - LPT: data inverted?
+	in	PP_B
+	ani	01000000b	; BS0 - LPT: data inverted?
 	mov	a,c
 	jrnz	Lec0c
 	cma
-Lec0c:	out	PIO2_B
+Lec0c:	out	PIO_B
 	ret
 
 Lec0f:	call	print
@@ -2569,9 +2485,9 @@ clrscr:	mvi	a,004h	; off, ena RAM
 	di
 	; setup vert. blanking intr
 	mvi	a,0cfh	; intr, ctr, falling, TC, reset
-	out	CTC1_3
+	out	CTC_1
 	mvi	a,001h	; TC=1 (immediate)
-	out	CTC1_3
+	out	CTC_1
 	ei
 	mvi	b,001h
 	ldx	e,+11
@@ -2605,9 +2521,9 @@ Lf0aa:	mvix	0,+10
 Lf0ae:	di
 	; setup vert. blanking intr
 	mvi	a,0cfh
-	out	CTC1_3	; intr, ctr, falling, TC, reset
+	out	CTC_1	; intr, ctr, falling, TC, reset
 	mvi	a,001h
-	out	CTC1_3
+	out	CTC_1
 	ei
 	bitx	1,+3
 	jrz	Lf0cb
@@ -2631,7 +2547,7 @@ vertbl:	push	psw
 	lda	crtstr+16
 	out	CRT_HUE
 	mvi	a,003h	; disable intr
-	out	CTC1_3
+	out	CTC_1
 reti1:	pop	psw
 	ei
 	reti
@@ -2853,15 +2769,15 @@ Lf236:	cmpx	+6	; check max row
 	ret
 
 ; beep the speaker
-beep:	in	PP_A
-	ori	PPA_SPK
-	out	PP_A
+beep:	in	PP_C
+	ori	PPC_SPK
+	out	PP_C
 	lxi	b,08000h	; 250mS @ 2MHz
 Lf247:	dcr	c
 	jrnz	Lf247
 	djnz	Lf247
-	ani	NOT PPA_SPK
-	out	PP_A
+	ani	(NOT PPC_SPK) AND 0ffh
+	out	PP_C
 	ret
 
 ; screen print?
@@ -3026,9 +2942,9 @@ crtpag:	bitx	1,+14
 	di
 	; setup vert. blanking intr
 	mvi	a,0cfh	; intr, ctr, falling, TC, reset
-	out	CTC1_3
+	out	CTC_1
 	mvi	a,001h
-	out	CTC1_3
+	out	CTC_1
 	ei
 	jr	ixret3
 
@@ -3157,9 +3073,9 @@ Lf46c:	push	d
 	di
 	; setup vert. blanking intr
 	mvi	a,0cfh	; intr, ctr, falling, TC, reset
-	out	CTC1_3
+	out	CTC_1
 	mvi	a,1	; TC=1 (immediate)
-	out	CTC1_3
+	out	CTC_1
 	ei
 ixret2:	popix
 	ret
@@ -3412,35 +3328,26 @@ Lf5d5:	di
 	mvi	a,HIGH Lde70
 	stai
 	; CTC init...
-	lxi	d,05fdfh
+	lxi	d,05fcfh
 	lxi	h,02f01h
-	mvi	c,CTC1_0
-	outp	d	;05fh - di, ctr, rising, TC, reset
-	mvi	a,000h
-	outp	a	;000h - TC=256 - from 307.18KHz
-	mvi	a,080h	; 1.2KHz
+	mvi	c,CTC_0
+; no use for CTC_0 (yet)
+;	outp	d	;05fh - di, ctr, rising, TC, reset
+;	mvi	a,000h
+;	outp	a	;000h - TC=256 - from 250KHz = 976.5625 Hz
+	mvi	a,LOW ctcvec
 	outp	a	;080h - intvec 80/82/84/86
-	inr	c	;CTC1_1
+	inr	c	;CTC_1 - vert blanking intr
+	outp	e	; 0cfh - ei, ctr, falling, TC, reset
+	outp	l	; TC=1 - immediate
+	inr	c	;CTC_2 - PC kbd intr
+	outp	e	; 0cfh - ei, ctr, falling, TC, reset
+	outp	l	; TC=1 - immediate
+	inr	c	;CTC_3 - FDC intr
 	mvi	a,0dfh	; ei, ctr, rising, TC, reset
-	outp	a	;0dfh
-	mvi	a,078h	; TC=120 - from ch0
-	outp	a	; 10Hz
-	inr	c	;CTC1_2
-	inr	c	;CTC1_3
-	inr	c	;CTC2_0
-	; second CTC? same as Jr. 020h?
-	outp	d	;05fh
-	outp	l	;001h
-	mvi	a,088h
-	outp	a	;088h - intvec 88/8a/8c/8e
-	inr	c	;CTC2_1
-	inr	c	;CTC2_2
-	outp	d	;05fh
-	outp	l	;001h
-	inr	c	;CTC2_3
-	outp	e	;0dfh
-	outp	l	;001h
-	; i8253 - same as Jr80 70h?
+	outp	a	;
+	outp	l	; TC=1 - immediate
+	; i8253 - same as Tpd-80 (diff port)
 	mvi	a,016h	; ctr 0: LSB only, mode 3, bin
 	out	CTR_C
 	mvi	a,008h	; count[0]=8 (9600baud)
@@ -3456,28 +3363,15 @@ Lf5d5:	di
 	mvi	a,HIGH 951
 	out	CTR_2
 	;
-	mvi	a,089h	; A mode0 out, B mode0 out, C input
+	mvi	a,092h	; A mode 0 in, B mode 0 in; C out
 	out	PP_CTL
-	mvi	a,PPA_SPG
-	out	PP_A
-	mvi	a,PPB_KRS	; enable kbd
-	out	PP_B
+	mvi	a,PPC_SPG+PPC_KRS
+	out	PP_C
 	; Z80-PIO
 	mvi	a,04fh	; mode 1 input
-	out	PIO1_AC
+	out	PIO_AC
 	mvi	a,LOW piovec	; intr vector
-	out	PIO1_AC
-	; Z80-PIO
-	mvi	a,04fh	; mode 1 input
-	out	PIO2_AC
-	mvi	a,00fh	; mode 0 output
-	out	PIO2_BC
-	mvi	a,LOW p2avec	; intr vec
-	out	PIO2_AC
-	mvi	a,LOW p2bvec	; intr vec
-	out	PIO2_BC
-	mvi	a,083h	; enable intr
-	out	PIO2_BC
+	out	PIO_AC
 	; Z80-SIO
 	mvi	b,8
 	mvi	c,SIO_AC
@@ -3511,15 +3405,11 @@ Lf5d5:	di
 	push	h
 	push	h
 	lxi	sp,tpa
-	in	PIO1_B
-	ani	CFG_RD
 	lxi	h,Lf8f2
 	mvi	m,0
-	jrz	Lf6a5
-	mvi	m,5
-Lf6a5:	mvi	a,10111111b	; CON:=UC1: RDR:=UR2: PUN:=UP2: LST:=LPT:
+	mvi	a,10111111b	; CON:=UC1: RDR:=UR2: PUN:=UP2: LST:=LPT:
 	sta	defiob
-	in	PIO1_B
+	in	PP_B
 	mov	b,a
 	ani	CFG_SER		; serial console?
 	jrnz	Lf6ea
@@ -3528,12 +3418,10 @@ Lf6a5:	mvi	a,10111111b	; CON:=UC1: RDR:=UR2: PUN:=UP2: LST:=LPT:
 	sta	defiob
 	; setup vert. retrace intr
 	mvi	a,0cfh	; intr, ctr, falling, TC, reset
-	out	CTC1_3
+	out	CTC_1
 	mvi	a,001h	; TC=1 (immediate)
-	out	CTC1_3
+	out	CTC_1
 	; setup keyboard
-	mvi	l,083h	; EI on PIO chA
-	mvi	c,PIO2_AC	; ASCII kbd
 	mov	a,b
 	ani	CFG_PCK		; PC keyboard?
 	jrz	Lf6e8
@@ -3544,43 +3432,49 @@ Lf6a5:	mvi	a,10111111b	; CON:=UC1: RDR:=UR2: PUN:=UP2: LST:=LPT:
 	shld	Le932
 	exaf
 	; perform PC kbd clear-out...
-	in	PP_B
-	ani	NOT PPB_KRS	; disable kbd
-	out	PP_B
+	in	PP_C
+	ani	NOT PPC_KRS
+	out	PP_C
 	lxi	b,2048	; delay some time
 Lf6db:	dcr	c
 	jrnz	Lf6db
 	djnz	Lf6db
-	ori	PPB_KRS		; re-enable kbd
-	out	PP_B
+	ori	PPC_KRS		; re-enable kbd
+	out	PP_C
+	; setup PC keyboard intr
+	mvi	a,0cfh	; intr, ctr, falling, TC, reset
+	out	CTC_2
+	mvi	a,001h	; TC=1 (immediate)
+	out	CTC_2
 	;
 	exaf
 	exx
-	mvi	c,PIO1_AC	; (PIO1_AC - PC kbd)
-Lf6e8:	outp	l	; set kbd intr
+Lf6e8:	mvi	l,083h	; EI on PIO chA
+	mvi	c,PIO_AC	; ASCII kbd
+	outp	l	; set kbd intr
 	; setup disk drives
 Lf6ea:	mov	a,b	; sys cfg dipsw
-	ani	CFG_501	; 5.25" drives?
+	ani	CFG_801	; 8" drives?
 	lxi	h,trn8m0
-	jrz	Lf6fa
+	jrnz	Lf6fa
 	mvi	a,'5'
 	sta	Lf783
 	lxi	h,trn5m0
 Lf6fa:	shld	dph0
 	shld	dph1
 	mov	a,b
-	ani	CFG_523
+	ani	CFG_823
 	lxi	h,trn8m0
-	jrz	Lf710
+	jrnz	Lf710
 	mvi	a,'5'
 	sta	Lf79b
 	lxi	h,trn5m0
 Lf710:	shld	dph2
 	shld	dph3
 	mov	a,b
-	ani	CFG_501
-	jz	Lf869
-	call	Le03a
+	ani	CFG_801
+	jnz	Lf869	; 8" drives
+	call	Le03a	; else 5.25" drives
 Lf71f:	ei
 	lda	defiob
 	sta	iobyte
@@ -3588,10 +3482,10 @@ Lf71f:	ei
 	sta	usrdrv
 	call	print
 	db	CAN,CR,LF
-	db	'Tpd-80 DOS vers. '
+	db	'Junior-80 DOS vers. '
 	db	((VERS/100) MOD 10)+'0'
 	db	'.'
-	db	((VERS/10) MOD 10)+'0'	; wboote+56
+	db	((VERS/10) MOD 10)+'0'
 	db	(VERS MOD 10)+'1'
 	db	' A  ** 57k CP/M 2.2 compatible **',CR,LF
 	db	BEL,'$'
@@ -3601,26 +3495,9 @@ Lf71f:	ei
 Lf783:	db	'8"',CR,LF
 	db	'Disk drives C & D : '
 Lf79b:	db	'8"',CR,LF,'$'
-	lda	Lf8f2
-	ora	a
-	mvi	a,004h
-	jz	Lf817
-	call	print
-	db	'Virtual disk E: in configuration',CR,LF
-	db	'192 kbytes storage capacity',CR,LF
-	db	'Format Vdisk ? (y/*): $'
-	call	conin
-	push	psw
-	mov	c,a
-	call	conout
-	pop	psw
-	ani	11011111b	; toupper
-	cpi	'Y'
-	cz	Lf86f	; erase
-	cnz	Lf88f	; refresh (always called?)
-	mvi	a,005h
-Lf817:	sta	Ldf6a+1
-	in	PIO1_B
+	mvi	a,4	; total number of drives supported
+	sta	Ldf6a+1
+	in	PP_B
 	mov	b,a
 	ani	CFG_SER
 	jnz	cboot	; silently cboot?
@@ -3642,74 +3519,9 @@ Lf85a:	call	print
 Lf869:	call	Le006	; setup 8" drives
 	jmp	Lf71f
 
-; erase all of ramdisk...
-Lf86f:	mvi	e,002h
-	call	Lf8ae
-	mvi	e,003h
-	call	Lf8ae
-	mvi	e,004h
-	call	Lf8ae
-	mvi	e,005h
-	call	Lf8ae
-	mvi	e,006h
-	call	Lf8ae
-	mvi	e,007h
-	call	Lf8ae
-	xra	a
-	ret
-
-; "refresh" all of ramdisk
-Lf88f:	mvi	e,002h
-	call	Lf8ca
-	mvi	e,003h
-	call	Lf8ca
-	mvi	e,004h
-	call	Lf8ca
-	mvi	e,005h
-	call	Lf8ca
-	mvi	e,006h
-	call	Lf8ca
-	mvi	e,007h
-	call	Lf8ca
-	ret
-
-; Erase a 32K chunk of ramdisk, E=bank
-; returns NZ (if hi bits in PP_A)
-Lf8ae:	in	PP_A
-	ani	NOT PPA_BNK
-	ora	e
-	out	PP_A
-	lxi	h,04000h
-	lxi	b,07fffh
-	push	h
-	pop	d
-	mvi	m,0e5h
-	inx	h
-	xchg
-	ldir
-Lf8c3:	in	PP_A
-	ani	NOT PPA_BNK	;return to bank 0
-	out	PP_A
-	ret
-
-; "refresh" a 32K chunk of ramdisk
-; clears flags (NZ)
-Lf8ca:	in	PP_A
-	ani	NOT PPA_BNK	; mask off current bank
-	ora	e		; add new bank
-	out	PP_A		; select bank
-	lxi	h,03fffh
-Lf8d4:	inx	h
-	mov	a,h
-	cpi	0c0h
-	jrz	Lf8c3
-	mov	a,m
-	mov	m,a
-	jr	Lf8d4
-
 ; Z80-SIO chan B init (fallthrough to chan A)
 Lf8de:	db	18h	; ch reset
-	db	12h,LOW Lde70	; reg 2 - int vector
+	db	12h,LOW siovec	; reg 2 - int vector
 ; Z80-SIO chan A init
 Lf8e1:	db	14h,4ch	; reg 4 - 16x, 2st, NP
 	db	15h,0eah ;reg 5 - DTR/RTS, Tx ena
