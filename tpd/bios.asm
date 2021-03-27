@@ -98,35 +98,35 @@ ramwin	equ	4000h	; banked RAM window, 32K length
 winlen	equ	8000h
 winend	equ	ramwin+winlen
 
-NIL	equ	0
-SOH	equ	1
-CTLC	equ	3
+NIL	equ	0	; ^@
+SOH	equ	1	; ^A
+CTLC	equ	3	; ^C
 ETX	equ	CTLC
-EOT	equ	4
-ENQ	equ	5
-ACK	equ	6
-BEL	equ	7
-BS	equ	8
-TAB	equ	9
-LF	equ	10
-VT	equ	11
-FF	equ	12
-CR	equ	13
-SO	equ	14	; reverse video
-SI	equ	15	; normal video
-XON	equ	17
+EOT	equ	4	; ^D
+ENQ	equ	5	; ^E
+ACK	equ	6	; ^F
+BEL	equ	7	; ^G
+BS	equ	8	; ^H
+TAB	equ	9	; ^I
+LF	equ	10	; ^J
+VT	equ	11	; ^K
+FF	equ	12	; ^L
+CR	equ	13	; ^M
+SO	equ	14	; ^N reverse video
+SI	equ	15	; ^O normal video
+XON	equ	17	; ^Q
 DC1	equ	XON
-DC2	equ	18
-XOFF	equ	19
+DC2	equ	18	; ^R
+XOFF	equ	19	; ^S
 DC3	equ	XOFF
-NAK	equ	21
-SYN	equ	22	; erase EOL
-ETB	equ	23
-CAN	equ	24	; clear screen
-EM	equ	25
-SUB	equ	26
-ESC	equ	27
-GS	equ	29
+NAK	equ	21	; ^U
+SYN	equ	22	; ^V erase EOL
+ETB	equ	23	; ^W
+CAN	equ	24	; ^X clear screen
+EM	equ	25	; ^Y
+SUB	equ	26	; ^Z
+ESC	equ	27	; ^[
+GS	equ	29	; ^]
 DEL	equ	127
 
 ccp$pg	equ	0c800h
@@ -191,7 +191,7 @@ Lde51:	jmp	Leee7		; CRT mode 20h
 	jmp	uc1in		; UC1: input
 	jmp	uc1st		; UC1: input status
 	jmp	nulfnc		;; de5d: c3 68 df    .h.
-	jmp	extfnc		; extended functions
+	jmp	extfnc		; extended functions, B=func, C=sub-fnc
 	jmp	nulfnc		;; de63: c3 68 df    .h.
 	jmp	nulfnc		;; de66: c3 68 df    .h.
 	jmp	nulfnc		;; de69: c3 68 df    .h.
@@ -539,7 +539,7 @@ Le0fd:	lxi	b,00002h	;; e0fd: 01 02 00    ...
 	call	Le6bc		;; e103: cd bc e6    ...
 	xra	a		;; e106: af          .
 	call	Le0ae		;; e107: cd ae e0    ...
-	call	Le17d		;; e10a: cd 7d e1    .}.
+	call	Le17d	; read ID off nearest sector
 	jz	Le138		;; e10d: ca 38 e1    .8.
 	mvi	a,002h		;; e110: 3e 02       >.
 	call	Le0ae		;; e112: cd ae e0    ...
@@ -576,12 +576,13 @@ Le138:	xra	a		;; e138: af          .
 	ldax	b	; DPB.SPT
 	cpi	36	; dpb5m2?
 	jnz	Le171		;; e155: c2 71 e1    .q.
+	; check for 80-track drive...
 	lda	fdcres+4	; C (track) number?
 	ora	a		;; e15b: b7          .
 	jz	Le0fd		;; e15c: ca fd e0    ...
 	sui	002h		;; e15f: d6 02       ..
 	jnz	Le171		;; e161: c2 71 e1    .q.
-	; special handling for dpb5m2...
+	; special handling for dpb5m2... DT...
 	mov	l,e		;; e164: 6b          k
 	mov	h,d		;; e165: 62          b
 	lxi	b,dpb5mZ	;; e166: 01 a2 e8    ...
@@ -1467,6 +1468,7 @@ dpbrd:	dw	256	; 32K "track" - one bank
 	dw	0
 
 ; FDC parameters for 5.25" disks
+; Format 1: DD, SS, 16 sectors/track, 256-byte each, 40 tracks
 fd5fm1:	db	1
 	db	16
 	db	10
@@ -1475,6 +1477,8 @@ fd5fm1:	db	1
 	db	46h	; READ command
 	dw	dpb5m1
 
+; Format 2: DD, SS, 9 sectors/track, 512-byte each, 40 tracks
+; Format Z: DD, DS, DT, 18 sectors/track, 512-byte each, 80 "tracks" (side 0+1 = track)
 fd5fm2:	db	2
 	db	9
 	db	10
@@ -1483,6 +1487,7 @@ fd5fm2:	db	2
 	db	46h	; READ command
 	dw	dpb5m2
 
+; Format 3: DD, 5 sectors/track, 1024-byte each
 fd5fm3:	db	3
 	db	5
 	db	80h
@@ -1491,6 +1496,7 @@ fd5fm3:	db	3
 	db	46h	; READ command
 	dw	dpb5m3
 
+; Format 0: SD, 16 sectors/track, 128-byte each
 fd5fm0:	db	0
 	db	10h
 	db	7
@@ -1506,6 +1512,7 @@ dpb5m1:	dw	32
 	dw	16
 	dw	2
 
+; 5.25" DD SS ST
 dpb5m2:	dw	36
 	db	3,7,0
 	dw	171-1,64-1
@@ -1513,6 +1520,7 @@ dpb5m2:	dw	36
 	dw	16
 	dw	2
 
+; 5.25" DD DS DT
 dpb5mZ:	dw	72
 	db	4,15,0
 	dw	351-1,128-1
@@ -2439,7 +2447,7 @@ Lef54:	bitx	1,+2		;; ef54: dd cb 02 4e ...N
 	cmpx	+6		;; ef60: dd be 06    ...
 	jrnc	Lef6e		;; ef63: 30 09       0.
 Lef65:	inrx	+1		;; ef65: dd 34 01    .4.
-	cpi	VT		;; ef68: fe 0b       ..
+	cpi	11		;; ef68: fe 0b       ..
 	jrnz	Lefa2		;; ef6a: 20 36        6
 	jr	Lef87		;; ef6c: 18 19       ..
 ; at bottom of screen
@@ -2928,8 +2936,8 @@ Lf2f1:	dw	escseq	; ESC
 
 Lf2f3:	db	'1289I'	; ESC commands...
 	dw	Lf21f	; ESC 1 col row
-	dw	Lf157	; ESC 2 - toggle line wrap
-	dw	Lf153	; ESC 8	- toggle ?era 12 lines?
+	dw	Lf157	; ESC 2 - toggle screen wrap
+	dw	Lf153	; ESC 8	- toggle (bit 4) ?era 12 lines?
 	dw	Lf163	; ESC 9 - toggle scroll lock
 Lf300:	dw	Lf04f	; ESC I - re-init? reset?
 
@@ -2956,9 +2964,9 @@ Lf330:	dw	escseq	; ESC
 ; VT-52 / H19?
 Lf332:	db	'Y34+ABCDHIJK|'
 Lf33f:	dw	Lf225	; ESC Y row col
-	dw	Lf157	; ESC 3
-	dw	Lf15b	; ESC 4
-	dw	Lf15f	; ESC +
+	dw	Lf157	; ESC 3 - toggle screen wrap
+	dw	Lf15b	; ESC 4 - toggle (bit 1)
+	dw	Lf15f	; ESC + - toggle (bit 6)
 	dw	curup	; ESC A - Cursor UP
 	dw	curdn	; ESC B - Cursor DOWN
 	dw	curri	; ESC C - Cursor RIGHT
@@ -3051,8 +3059,8 @@ Lf3d0:	bitx	1,+14		;; f3d0: dd cb 0e 4e ...N
 
 Lf3e0:	ldx	b,+16		;; f3e0: dd 46 10    .F.
 	mov	a,b		;; f3e3: 78          x
-	ani	0c0h		;; f3e4: e6 c0       ..
-	orax	+17		;; f3e6: dd b6 11    ...
+	ani	11000000b	; preserve text page
+	orax	+17		; add color
 	jr	ixret3		;; f3e9: 18 8d       ..
 
 ; C=bitmap
@@ -3095,18 +3103,21 @@ Lf408:	mov	a,c		;; f408: 79          y
 	jrz	Lf434	; C==8
 	dcr	a		;; f424: 3d          =
 	jnz	ixret3
-	setb	1,h	; C==9
+	; C==9 80x24
+	setb	1,h	; crtstr+3
 	jr	Lf438		;; f42a: 18 0c       ..
 
+; (C==1) 40x25,
 Lf42c:	mvi	e,39	; 39 cols?
 	mvi	a,00101000b	; blink, 320x200, on, graphics, 40x25
-	setb	2,h		;; f430: cb d4       ..
-	jr	Lf43a		; ZR
+	setb	2,h	; crtstr+3
+	jr	Lf43a	; ZR
 
-Lf434:	lxi	h,(12h shl 8)+82h	;; f434: 21 82 12    ...
+; (C==8) 80x24, VT52
+Lf434:	lxi	h,(12h shl 8)+82h	; default/init modes
 	inr	a	; NZ
 ; entered with ZR unless fallthrough
-Lf438:	mvi	a,00101001b	; blink, 320x200, on, graphics, 80x25
+Lf438:	mvi	a,00101001b	; blink, 320x200, on, graphics, 80x25/24
 Lf43a:	call	Lf4c8	; flags not altered
 	mvix	007h,+11	;; f43d: dd 36 0b 07 .6..
 	lxi	h,Lf4f6		;; f441: 21 f6 f4    ...
@@ -3151,14 +3162,16 @@ ixret2:	popix			;; f497: dd e1       ..
 
 callhl:	pchl			;; f49a: e9          .
 
+; (C==4) 40x25, text,
 Lf49b:	mvi	e,39		;; f49b: 1e 27       .'
-	setb	2,h		;; f49d: cb d4       ..
+	setb	2,h	; crtstr+3
 	mvix	0ffh,+15	;; f49f: dd 36 0f ff .6..
-	mvi	b,020h		;; f4a3: 06 20       . 
+	mvi	b,020h		; color palette?
 	mvi	a,00001010b	; 320x200, on, text, 40x25
 	jr	Lf4ad		;; f4a7: 18 04       ..
 
-Lf4a9:	mvi	b,007h		;; f4a9: 06 07       ..
+; (C==6) 80x25, text, 640x200, 40x25?
+Lf4a9:	mvi	b,007h		; white?
 	mvi	a,00011010b	; 640x200, on, text, 40x25
 Lf4ad:	push	h		;; f4ad: e5          .
 	lxi	h,whooks	;; f4ae: 21 2a fd    .*.
@@ -3173,10 +3186,14 @@ Lf4ad:	push	h		;; f4ad: e5          .
 	lded	Lf50a		;; f4c2: ed 5b 0a f5 .[..
 	jr	Lf46c		;; f4c6: 18 a4       ..
 
+; A = new CRT_CTL
+; HL = new flags
+; DE = new max row/col
+; C = new crtstr+17
 Lf4c8:	sta	crtstr+14	; set new CRT mode
 	shld	crtstr+2	; and flags
 	lxi	h,0		;; f4ce: 21 00 00    ...
-	shld	crtstr+0	;; f4d1: 22 0c f5    "..
+	shld	crtstr+0	; home cursor
 	mvi	h,HIGH crtram	; CRT RAM at 04000h...
 	shld	crtstr+12	;; f4d6: 22 18 f5    "..
 	shld	crtstr+7	;; f4d9: 22 13 f5    "..
