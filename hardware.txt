@@ -64,7 +64,7 @@ D5 - blinking activated (1 active)
 D4 - mode selection 0 = 320x200 1=640x200
 D3 - display 0=off 1 = on
 D2 - validate acces display ram (16k display ram on board) - 1 active
-D1 - 0 - graphics mode / 1 - text mode
+D1 - 1 - graphics mode / 0 - text mode
 D0 - 0 = 40x25, 1= 80x25
 4BH - color selection and text page selection for display controller
 D6-7 - selection of working text page

@@ -3076,7 +3076,7 @@ Lf3c6:	rlc		; replicate 000000xx in all positions
 
 ; func 11 - set background?
 Lf3d0:	bitx	1,+14
-	jrz	ixret3
+	jrz	ixret3	; ignored in text?
 	mov	a,c
 	ani	00111111b
 	sta	crtstr+16
@@ -3114,36 +3114,36 @@ Lf408:	mov	a,c
 	lxi	d,(24 shl 8)+79	; 25x80
 	lxi	h,0
 	dcr	a
-	jrz	Lf42c	; C==1
+	jrz	Lf42c	; C==1 - text 40x25, blink
 	dcr	a
 	dcr	a
-	jrz	Lf438	; C==3
+	jrz	Lf438	; C==3 - text, 80x25, blink
 	dcr	a
-	jz	Lf49b	; C==4
-	dcr	a
-	dcr	a
-	jz	Lf4a9	; C==6
-	dcr	d	; 23 lines (24x80)
+	jz	Lf49b	; C==4 = graphics, 320x200
 	dcr	a
 	dcr	a
-	jrz	Lf434	; C==8
+	jz	Lf4a9	; C==6 - graphics, 640x200
+	dcr	d	; 23 lines (80x24/40x24)
+	dcr	a
+	dcr	a
+	jrz	Lf434	; C==8 - text, VT52, 80x24, blink
 	dcr	a
 	jnz	ixret3
-	; C==9 80x24
+	;		; C==9 - text, 80x24, blink
 	setb	1,h	; crtstr+3
 	jr	Lf438
 
-; (C==1) 40x25,
+; (C==1) 40x25, text, blink
 Lf42c:	mvi	e,39	; 39 cols?
-	mvi	a,00101000b	; blink, 320x200, on, graphics, 40x25
+	mvi	a,00101000b	; blink, on, text, 40x25, lo-res
 	setb	2,h	; crtstr+3
 	jr	Lf43a	; ZR
 
-; (C==8) 80x24, VT52
+; (C==8) 80x24, VT52, text, blink
 Lf434:	lxi	h,(12h shl 8)+82h	; default/init modes
 	inr	a	; NZ
 ; entered with ZR unless fallthrough
-Lf438:	mvi	a,00101001b	; blink, 320x200, on, graphics, 80x25/24
+Lf438:	mvi	a,00101001b	; blink, on, text, hi-res
 Lf43a:	call	Lf4c8	; flags not altered
 	mvix	007h,+11
 	lxi	h,Lf4f6
@@ -3165,8 +3165,8 @@ Lf449:	lxi	b,9
 	lxi	d,Leee7
 Lf46c:	push	d
 	push	h
-	mvi	c,24
-	call	callhl
+	mvi	c,CAN	; clear screen
+	call	callhl	; conout to CRT:
 	pop	h
 	shld	Le92a
 	shld	Le93a
@@ -3189,17 +3189,17 @@ ixret2:	popix
 
 callhl:	pchl
 
-; (C==4) 40x25, text,
+; (C==4) 320x200 graphics
 Lf49b:	mvi	e,39
 	setb	2,h	; crtstr+3
 	mvix	0ffh,+15
 	mvi	b,020h		; color palette?
-	mvi	a,00001010b	; 320x200, on, text, 40x25
+	mvi	a,00001010b	; graphics, 320x200, on
 	jr	Lf4ad
 
-; (C==6) 80x25, text, 640x200, 40x25?
+; (C==6) graphics, 640x200
 Lf4a9:	mvi	b,007h		; white?
-	mvi	a,00011010b	; 640x200, on, text, 40x25
+	mvi	a,00011010b	; 640x200, on, graphics
 Lf4ad:	push	h
 	lxi	h,whooks
 	bit	2,m	; hook 2?
@@ -3751,16 +3751,16 @@ Lf8f2:	db	0
 
 dirbuf:	ds	128	; scratch buffer
 
-alv0:	ds	64	; ALV0
-csv0:	ds	64	; CSV0
-alv1:	ds	64	; ALV1
-csv1:	ds	64	; CSV1
-alv2:	ds	64	; ALV2
-csv2:	ds	64	; CSV2
-alv3:	ds	64	; ALV3
-csv3:	ds	64	; CSV3
-alv4:	ds	64	; ALV4
-csv4:	ds	64	; CSV4
+alv0:	ds	512/8	; ALV0 - space for 512 blocks
+csv0:	ds	256/4	; CSV0 - space for 256 dir ents
+alv1:	ds	512/8	; ALV1
+csv1:	ds	256/4	; CSV1
+alv2:	ds	512/8	; ALV2
+csv2:	ds	256/4	; CSV2
+alv3:	ds	512/8	; ALV3
+csv3:	ds	256/4	; CSV3
+alv4:	ds	512/8	; ALV4
+csv4:	ds	256/4	; CSV4
 
 Lfcd5:	ds	1
 Lfcd6:	ds	1	; write flag (again?)
