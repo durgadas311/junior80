@@ -263,7 +263,7 @@ wboot:	lxi	sp,tpa
 	call	fill
 	;
 	cma	; 0ffh
-	sta	curdsk
+	sta	curfmt
 	di
 	mvi	a,0c3h
 	sta	cpm
@@ -320,6 +320,7 @@ icall:	mov	e,m
 	push	d
 nulfnc:	ret
 
+; C=new dsk (0-4), E=login bit
 seldsk:	mov	a,c
 Ldf6a:	cpi	005h	; 4 or 5 depending on ramdisk
 	lxi	h,0
@@ -334,64 +335,70 @@ Ldf77:	sspd	savstk
 	lspd	savstk
 	ret
 
+; C=new dsk (0-4), A=C
 Ldf86:	cpi	004h
 	jz	Ldf9d	; ramdisk
-	mov	b,e
+	; C=new dsk (0-3)
+	mov	b,e	; save login bit in B
 	push	b
 	push	h
-	call	Le3f5
+	call	Le3f5	; flush dirty buffer?
 	pop	h
 	pop	b
 	mov	a,c
-	sta	Lfcd8
+	sta	newdrv
 	push	b
 	call	Ldfe9
 	pop	b
 	mov	a,c
+; C=new dsk (0-4)
 Ldf9d:	lxi	d,dphtbl
 	add	a
 	add	a
 	add	a
 	add	a
-	add	c
+	add	c	; *17
 	mov	l,a
 	mvi	h,0
 	dad	d
 	shld	curdph
 	lxi	d,16
-	dad	d
-	mvi	a,004h
+	dad	d	; extension byte (format)
+	mvi	a,4	; ramdisk
 	cmp	c
 	jz	Ldfde
-	mov	a,b
+	; floppies only
+	mov	a,b	; login bit
 	rrc
-	jc	Ldfbd
-	mvi	m,0ffh
+	jc	Ldfbd	; already logged in
+	mvi	m,0ffh	; mark "not accessed"
 Ldfbd:	mov	a,m
-	sta	Lfcdb
+	sta	drvfmt	; login flag
 	call	Le080
 	lhld	curdph
-	lda	Lfd09
+	lda	drvsz5
 	ora	a
 	jz	Ldfd9
-	lda	curdsk
-	cpi	004h
-	mvi	a,1
+	lda	curfmt
+	cpi	4	; dpb5mZ
+	mvi	a,1	; "half track" mode
 	jnz	Ldfd9
 	xra	a
-Ldfd9:	sta	Lfd0b
+Ldfd9:	sta	hlftrk
 	ora	a
 	ret
 
+; Use existing format from DPH
+; HL=&DPH+16
 Ldfde:	mov	a,m
-	sta	curdsk
-	sta	Lfcdb
+	sta	curfmt
+	sta	drvfmt
 	lhld	curdph
 	ret
 
 Ldfe9:	lda	Lfcfd
 	xra	c
-	ani	002h
+	ani	002h	; 8"/5" change?
 	mov	a,c
 	sta	Lfcfd
 	rz
@@ -401,11 +408,11 @@ Ldfe9:	lda	Lfcfd
 	mvi	b,CFG_823
 Ldffd:	in	PP_B
 	ana	b	; test drive type
-	jnz	Le006	; 8"
-	jmp	Le03a	; else 5.25"
+	jnz	setdr8	; new drive is 8"
+	jmp	setdr5	; new drive is 5"
 
 ; setup 8" drives
-Le006:	lxi	h,fd8fm0
+setdr8:	lxi	h,fd8fm0
 	shld	Le0b9+1
 	lxi	h,fd8fm1
 	shld	Le0ca+1
@@ -414,7 +421,7 @@ Le006:	lxi	h,fd8fm0
 	lxi	h,fd8fm3
 	shld	Le0c2+1
 	xra	a
-	sta	Lfd09	; set 8" drives
+	sta	drvsz5	; set 8" drives
 	mvi	b,FDC_RST	; release i8272 RESET, 8" drives
 	call	Le06f
 	di
@@ -424,10 +431,10 @@ Le006:	lxi	h,fd8fm0
 	call	fdcout
 	mvi	b,02eh	; HLT=23, ND=0 (DMA on?)
 	call	fdcout
-	jmp	Le6a7
+	jmp	recal
 
 ; setup 5.25" drives
-Le03a:	lxi	h,fd5fm0
+setdr5:	lxi	h,fd5fm0
 	shld	Le0b9+1
 	lxi	h,fd5fm1
 	shld	Le0ca+1
@@ -436,7 +443,7 @@ Le03a:	lxi	h,fd5fm0
 	lxi	h,fd5fm3
 	shld	Le0c2+1
 	mvi	a,001h
-	sta	Lfd09	; set 5.25" drives
+	sta	drvsz5	; set 5.25" drives
 	mvi	b,FDC_RST+FDC_5IN ; release i8272 RESET, 5.25" drives
 	call	Le06f
 	di
@@ -446,7 +453,7 @@ Le03a:	lxi	h,fd5fm0
 	call	fdcout
 	mvi	b,002h	; HLT=1, ND=0 (DMA on?)
 	call	fdcout
-	jmp	Le6a7
+	jmp	recal
 
 ; modify FDC_CTL RESET, 8/5 drives
 ; B=bits to replace
@@ -461,11 +468,11 @@ Le06f:	lda	Lde6f
 	out	FDC_CTL
 	ret
 
-Le080:	lda	Lfcd8
+Le080:	lda	newdrv
 	mov	e,a
-	mvi	d,000h
-	lda	fdcbuf
-	ani	003h	; old DS1/DS0
+	mvi	d,0
+	lda	fdcbuf+0	; old DS1/DS0
+	ani	003h
 	cmp	e
 	jz	Le0a6
 	; different drive - do select
@@ -481,17 +488,18 @@ Le080:	lda	Lfcd8
 	mov	a,m	; restore new drive track num
 	sta	fdcbuf+1
 	mov	a,e
-	sta	fdcbuf	; new DS1/DS0 value
-Le0a6:	lda	Lfcdb
+	sta	fdcbuf+0	; new DS1/DS0 value
+Le0a6:	lda	drvfmt
 	cpi	0ffh
-	jz	Le0f0
-Le0ae:	lxi	h,curdsk
+	jz	Le0f0	; format unknown
+; force setup of new format
+setfmt:	lxi	h,curfmt
 	cmp	m
 	jz	Le0e0
 	mov	m,a
 Le0b6:	lxi	d,fdcbuf+4
 Le0b9:	lxi	h,fd8fm0	; replaced with current format
-	mvi	b,006h
+	mvi	b,6
 	ora	a
 	jz	Le0d4
 Le0c2:	lxi	h,fd8fm3
@@ -507,97 +515,99 @@ Le0d4:	mov	a,m
 	inx	d
 	dcr	b
 	jnz	Le0d4
-	shld	Lfcdc
+	shld	fmtdpb	; pointer to fmt.dpb
 	ret
 
 Le0e0:	lda	Lfd0a
 	mov	e,a
-	lda	Lfd09
+	lda	drvsz5
 	sta	Lfd0a
 	xra	e
 	mov	a,m
 	rz
 	jmp	Le0b6
 
+; init for new drive/diskette
 Le0f0:	xra	a
 	sta	curtrk
-	sta	Lfd0b
-	call	Le6a7
-	call	Le742
-Le0fd:	lxi	b,00002h
+	sta	hlftrk
+	call	recal
+	call	setmtr
+Le0fd:	lxi	b,2	; check format on track 2...
 	call	settrk
-	call	Le6bc
+	call	seek
 	xra	a
-	call	Le0ae
-	call	Le17d	; read ID off nearest sector
+	call	setfmt	; format 0
+	call	readid	; read ID off nearest sector
+	jz	Le138	; format same?
+	mvi	a,2
+	call	setfmt	; format 2
+	call	readid
 	jz	Le138
-	mvi	a,002h
-	call	Le0ae
-	call	Le17d
+	mvi	a,1
+	call	setfmt	; format 1
+	call	readid
 	jz	Le138
-	mvi	a,001h
-	call	Le0ae
-	call	Le17d
-	jz	Le138
-	mvi	a,003h
-	call	Le0ae
-	call	Le17d
+	mvi	a,3	; format 3
+	call	setfmt
+	call	readid
 	jz	Le138
 	lxi	h,0
 	shld	curdph
 	ret
 
+; got format...
 Le138:	xra	a
 	sta	curtrk
-	call	Le6a7
+	call	recal
 	lhld	curdph
 	lxi	d,10
 	dad	d
-	xchg
-	lhld	Lfcdc
-	mov	a,m
-	stax	d
+	xchg		; DE=&dph.dpb
+	lhld	fmtdpb
+	mov	a,m	;
+	stax	d	; set new dpb
 	mov	c,a
 	inx	h
 	inx	d
 	mov	a,m
 	stax	d
-	mov	b,a
+	mov	b,a	; BC=new dpb
 	ldax	b	; DPB.SPT
 	cpi	36	; dpb5m2?
-	jnz	Le171
+	jnz	Le171	; skip if not dpb5m2
 	; check for 80-track drive...
 	lda	fdcres+4	; C (track) number?
 	ora	a
-	jz	Le0fd
+	jz	Le0fd	; format not yet checked?
 	sui	002h
-	jnz	Le171
+	jnz	Le171	; skip otherwise
 	; special handling for dpb5m2... DT...
 	mov	l,e
-	mov	h,d
+	mov	h,d	; HL=&DPH.DPB+1
 	lxi	b,dpb5mZ
 	mov	m,b
 	dcx	h
 	mov	m,c
-	mvi	a,004h
-	sta	curdsk
-Le171:	lxi	h,00005h
+	mvi	a,4
+	sta	curfmt
+Le171:	lxi	h,5
 	dad	d
-	lda	curdsk
+	lda	curfmt
 	mov	m,a
-	sta	Lfcdb
+	sta	drvfmt
 	ret
 
-Le17d:	lda	Lfd07
+readid:	lda	rdcmd
 	ani	040h
 	ori	00ah	; READ ID command + MFM
 	mov	b,a
 	mvi	c,1
 	call	fdccmd
-	jc	Le17d
+	jc	readid
 	rnz
 	lxi	h,fdcres+7
-	lda	curdsk
+	lda	curfmt
 	cmp	m
 	ret
 
@@ -609,18 +619,18 @@ settrk:	mov	h,b
 
 setsec:	mov	a,c
 	sta	cursec
-	lda	Lfd09
+	lda	drvsz5
 	ora	a
 	jz	Le1bd
-	lda	Lfd0b
+	lda	hlftrk
 	ora	a
-	mvi	a,000h
+	mvi	a,0
 	jnz	Le1bd
 	mov	a,c
 	cpi	36
 	mvi	a,0
 	jc	Le1bd
-	mvi	a,1
+	mvi	a,1	; only for 5" fmt 2.
 Le1bd:	sta	cursid
 	mov	a,c
 	ora	a
@@ -628,28 +638,30 @@ Le1bd:	sta	cursid
 
 sectrn:	mov	a,c
 	sta	Lfce2
-	lda	curdsk
+	lda	curfmt
 	ora	a
-	jz	Le1e1
+	jz	trnfm0	; format 0
 	dcr	a
-	jz	Le204
+	jz	trnfm1	; format 1
 	dcr	a
-	jz	Le1e6
+	jz	trnfm2	; format 2
 	dcr	a
-	jz	Le1de
+	jz	trnfm3	; format 3
 	dcr	a
-	jz	Le230
-Le1de:	mov	l,c
+	jz	trnfm4	; format 4
+trnfm3:	mov	l,c
 	mov	a,c
 	ret
 
-Le1e1:	xchg
+; 128-byte sectors - use table
+trnfm0:	xchg
 	dad	b
 	mov	l,m
 	mov	a,l
 	ret
 
-Le1e6:	lda	Lfd09
+; 512-byte sectors, use trn5m2/trn8m2
+trnfm2:	lda	drvsz5
 	ora	a
 	lxi	h,trn5m2
 	jnz	Le1f3
@@ -671,18 +683,21 @@ Le1f3:	mov	a,c
 	mov	l,a
 	ret
 
-Le204:	lda	Lfd09
+; 256-byte sectors - hard-coded skew
+trnfm1:	lda	drvsz5
 	ora	a
-	mvi	e,01ah
-	mvi	d,009h
-	mvi	b,000h
+	; 8" params
+	mvi	e,26
+	mvi	d,9	; skew
+	mvi	b,0
 	jz	Le217
-	mvi	e,010h
-	mvi	d,008h
-	mvi	b,001h
+	; 5" params
+	mvi	e,16
+	mvi	d,8	; skew
+	mvi	b,1
 Le217:	mov	a,c
 	rar
-	push	psw
+	push	psw	; save CY
 	mov	c,a
 	xra	a
 Le21c:	dcr	c
@@ -701,11 +716,14 @@ Le22a:	mov	c,a
 	mov	l,a
 	ret
 
-Le230:	mov	a,c
-	ani	0fch
-	mvi	e,024h
+; phy sec in:  0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17
+; phy sec out: 0,2,4,6,8,1,3,5,7,9,11,13,15,17,10,12,14,16
+; skew=2 but second side is +1
+trnfm4:	mov	a,c
+	ani	11111100b
+	mvi	e,36
 	cmp	e
-	mvi	b,000h
+	mvi	b,0
 	jc	Le23d
 	sub	e
 	mov	b,e
@@ -740,12 +758,12 @@ Le259:	sspd	savstk
 Le268:	sta	wrflg
 	mov	a,c
 	sta	Lfce6
-	lda	Lfcdb
+	lda	drvfmt
 	ora	a
 	jnz	Le2a0
 	call	Le3f5
 	call	Le61d
-	call	Le6bc
+	call	seek
 	lxi	h,127
 	shld	Lfce7
 	lda	cursec
@@ -778,7 +796,7 @@ Le2b2:	shld	Lfce7
 	mov	a,m
 	inr	a
 	sta	curblm
-	lda	Lfcd8
+	lda	newdrv
 	sta	Lfcea
 	lhld	curtrk
 	shld	Lfceb
@@ -789,7 +807,7 @@ Le2e1:	lda	curblm
 	jz	Le338
 	dcr	a
 	sta	curblm
-	lda	Lfcd8
+	lda	newdrv
 	lxi	h,Lfcea
 	cmp	m
 	jnz	Le338
@@ -834,11 +852,12 @@ Le338:	xra	a
 	sta	curblm
 	inr	a
 	sta	Lfcee
-Le340:	lda	Lfcdb
+Le340:	lda	drvfmt
 	cpi	004h
 	jnz	Le34a
 	mvi	a,002h
 Le34a:	mov	b,a
+	; convert CP/M record to physical sector
 	lda	cursec
 	dcr	b
 	jz	Le35a
@@ -856,10 +875,11 @@ Le35a:	ora	a
 	mov	b,a
 	ora	a
 	jz	Le36a
+	; only for 5" fmt 2
 	mov	a,c
-	sui	009h
+	sui	9	; mod sec for side 2
 	mov	c,a
-Le36a:	lda	Lfcd8
+Le36a:	lda	newdrv
 	mov	l,a
 	lda	Lfcfc
 	cmp	l
@@ -877,7 +897,7 @@ Le36a:	lda	Lfcd8
 Le38d:	push	b
 	call	Le3f5
 	call	Le61d
-	call	Le6bc
+	call	seek
 	pop	b
 	lxi	h,fdcbuf+3
 	mov	m,c
@@ -888,13 +908,13 @@ Le38d:	push	b
 	jz	Le3b7
 	lhld	dmaadr
 	push	h
-	lxi	h,Lf5d5
+	lxi	h,secbuf
 	shld	dmaadr
 	call	Le43c
 	pop	h
 	shld	dmaadr
 	rnz
-Le3b7:	lda	Lfcdb
+Le3b7:	lda	drvfmt
 	cpi	003h
 	jz	Le41e
 	rar
@@ -906,7 +926,7 @@ Le3b7:	lda	Lfcdb
 	mov	l,a
 	mvi	h,000h
 	dad	h
-	lxi	d,Lf5d5
+	lxi	d,secbuf
 Le3d1:	dad	d
 	xchg
 	lhld	dmaadr
@@ -934,7 +954,7 @@ Le3f5:	lxi	h,Lfcd7
 	rz
 	lhld	dmaadr
 	push	h
-	lxi	h,Lf5d5
+	lxi	h,secbuf
 	shld	dmaadr
 	call	Le431
 	pop	h
@@ -946,7 +966,7 @@ Le40f:	lda	cursec
 	rrc
 	mov	e,a
 	mvi	d,000h
-	lxi	h,Lf5d5
+	lxi	h,secbuf
 	jmp	Le3d1
 
 Le41e:	lda	cursec
@@ -958,18 +978,18 @@ Le41e:	lda	cursec
 	mvi	h,000h
 	dad	h
 	dad	h
-	lxi	d,Lf5d5
+	lxi	d,secbuf
 	jmp	Le3d1
 
 ; write operation
-Le431:	lda	Lfd06
+Le431:	lda	wrcmd
 	mov	b,a
 	mvi	c,DMA_RD
 	mvi	a,1
 	jmp	Le443
 
 ; read operation
-Le43c:	lda	Lfd07
+Le43c:	lda	rdcmd
 	mov	b,a
 	mvi	c,DMA_WR
 	xra	a
@@ -978,15 +998,16 @@ Le446:	xra	a
 	sta	Lfcef
 	mvi	a,010h
 Le44c:	sta	Lfcd5
-Le44f:	lda	fdcbuf
-	ani	003h
+	; merge head select from H param
+Le44f:	lda	fdcbuf+0	; HDS:DS1:DS0
+	ani	003h		; DS1:DS0
 	mov	l,a
-	lda	fdcbuf+2
+	lda	fdcbuf+2	; H
 	rlc
 	rlc
-	ora	l
-	sta	fdcbuf
-	call	Le742
+	ora	l		; HDS:DS1:DS0
+	sta	fdcbuf+0
+	call	setmtr
 	di
 	lhld	Lfce7
 	mov	a,l
@@ -1023,8 +1044,8 @@ Le492:	lda	fdcres+3
 	jnz	Le4ab
 	cma
 	sta	Lfcef
-	call	Le6a7
-	call	Le6bc
+	call	recal
+	call	seek
 Le4ab:	pop	b
 	lda	Lfcd5
 	dcr	a
@@ -1101,11 +1122,11 @@ lstst:	xra	a
 Le594:	xra	a
 	ret
 
-Le61d:	lda	Lfcd8
+Le61d:	lda	newdrv
 	sta	Lfcfc
 	ret
 
-Le624:	lda	fdcbuf
+Le624:	lda	fdcbuf+0
 	ani	003h
 	adi	'A'
 	sta	Le633
@@ -1165,28 +1186,28 @@ Le69b:	call	print
 	db	'protect$'
 	ret
 
-Le6a7:	call	Le6aa
-Le6aa:	call	Le742
+recal:	call	Le6aa	; why twice, recursive?
+Le6aa:	call	setmtr
 	xra	a
 	sta	fdcbuf+1
-	mvi	b,007h
+	mvi	b,007h	; RECALIBRATE command
 	mvi	c,001h
 	call	fdccmd
 	jc	Le6aa
 	ret
 
-Le6bc:	call	Le742
+seek:	call	setmtr
 	lda	curtrk
 	lxi	h,fdcbuf+1
 	cmp	m
 	rz		; no SEEK needed
 	mov	e,a
-	lda	Lfd0b
+	lda	hlftrk
 	ora	a
 	mov	a,e
 	jz	Le6d1
-	rlc
-Le6d1:	mov	m,a
+	rlc	; half-track, phytrk = logtrk*2
+Le6d1:	mov	m,a	; fdcbuf+1
 Le6d2:	mvi	b,00fh	; SEEK command
 	mvi	c,2
 	call	fdccmd
@@ -1229,7 +1250,7 @@ Le6f9:	dcx	b
 
 Le710:	dcr	d
 	jnz	Le6f6
-	lda	Lfd09	; drive type, 0=8"
+	lda	drvsz5	; drive type, 0=8"
 	call	Le721
 	call	Le624
 	pop	b
@@ -1239,8 +1260,8 @@ Le710:	dcr	d
 
 ; setup drives, A=0 for 8"
 Le721:	ora	a
-	jz	Le006
-	jmp	Le03a
+	jz	setdr8
+	jmp	setdr5
 
 ; Begin FDC command sequence.
 ; B=byte
@@ -1262,12 +1283,14 @@ fdcin:	in	FDC_STS
 	in	FDC_DAT
 	ret
 
-Le742:	push	b
-	lda	Lfd09
+; start motor and delay, if needed.
+; re-sets drive timeout.
+setmtr:	push	b
+	lda	drvsz5
 	ora	a
 	jz	Le778
 	lxi	h,fdcmtr-1
-	lda	fdcbuf
+	lda	fdcbuf+0
 	ani	003h
 	mov	c,a
 	inr	c
@@ -1299,16 +1322,13 @@ Le778:	pop	b
 ; DPHs for drives A: to E: (DPBs may be filled in later)
 dphtbl:
 dph0:	dw	trn8m0,00000h,00000h,00000h,dirbuf,0000h,csv0,alv0
-	db	0ffh
+	db	0ffh	; fmt unknown
 dph1:	dw	trn8m0,00000h,00000h,00000h,dirbuf,0000h,csv1,alv1
-	db	0ffh
+	db	0ffh	; fmt unknown
 dph2:	dw	trn5m0,00000h,00000h,00000h,dirbuf,0000h,csv2,alv2
-	db	0ffh
+	db	0ffh	; fmt unknown
 dph3:	dw	trn5m0,00000h,00000h,00000h,dirbuf,0000h,csv3,alv3
-	db	0ffh
-; extra DPH for ramdisk
-	dw	00000h,00000h,00000h,00000h,dirbuf,dpbrd,csv4,alv4
-	db	10h
+	db	0ffh	; fmt unknown
 
 ; FDC parameters for 8" disks
 fd8fm1:	db	1	; fdcbuf N
@@ -1375,14 +1395,6 @@ dpb8m0:	dw	26
 trn8m0:	db	1,7,13,19,25,5,11,17,23,3,9,15,21
 	db	2,8,14,20,26,6,12,18,24,4,10,16,22
 trn8m2:	db	0,7,14,5,12,3,10,1,8,15,6,13,4,11,2,9
-
-; 192K ramdisk
-dpbrd:	dw	256	; 32K "track" - one bank
-	db	4,15,1
-	dw	96-1,128-1
-	db	11000000b,0
-	dw	0
-	dw	0
 
 ; FDC parameters for 5.25" disks
 ; Format 1: DD, SS, 16 sectors/track, 256-byte each, 40 tracks
@@ -3317,9 +3329,11 @@ fill:	stax	d
 	jnz	fill
 	ret
 
+	ds	0f5d5h-$	; for now, keep address
 ; overlayed???
 ; JMP Lf5d5 is planted in CCP at ccp$pg+7 (boot entry)
 ; This is the true cold start...
+secbuf:	ds	0	; ds 1024...
 Lf5d5:	di
 	xra	a
 	out	DMA_CTL
@@ -3474,7 +3488,7 @@ Lf710:	shld	dph2
 	mov	a,b
 	ani	CFG_801
 	jnz	Lf869	; 8" drives
-	call	Le03a	; else 5.25" drives
+	call	setdr5	; drive A: is 5", set it up
 Lf71f:	ei
 	lda	defiob
 	sta	iobyte
@@ -3516,7 +3530,7 @@ Lf85a:	call	print
 	db	'parallel$'
 	jmp	Lf848
 
-Lf869:	call	Le006	; setup 8" drives
+Lf869:	call	setdr8	; setup 8" drives
 	jmp	Lf71f
 
 ; Z80-SIO chan B init (fallthrough to chan A)
@@ -3532,9 +3546,8 @@ Lf8e1:	db	14h,4ch	; reg 4 - 16x, 2st, NP
 Lf8e9:	db	11,'AUTOEXEC' ; followed by 'BAT' = 11 chars
 
 Lf8f2:	db	0
-	db	0e5h,0e5h,0e5h,0e5h,0e5h,0e5h,0e5h,0e5h,0e5h,0e5h,0e5h
-	db	0e5h,0e5h
-	ds	213
+	ds	1024-($-secbuf)
+
 dirbuf:	ds	128	; scratch buffer
 
 alv0:	ds	64	; ALV0
@@ -3545,18 +3558,16 @@ alv2:	ds	64	; ALV2
 csv2:	ds	64	; CSV2
 alv3:	ds	64	; ALV3
 csv3:	ds	64	; CSV3
-alv4:	ds	64	; ALV4
-csv4:	ds	64	; CSV4
 
 Lfcd5:	ds	1
 Lfcd6:	ds	1	; write flag (again?)
 Lfcd7:	ds	1
-Lfcd8:	ds	1
+newdrv:	ds	1	; drive passed to seldsk
 curdph:	ds	2	; current drive's DPH
-Lfcdb:	ds	1
-Lfcdc:	ds	2
+drvfmt:	ds	1	; FF if first access to drive (login)
+fmtdpb:	ds	2	; point to dpb addr in fmt struct
 curtrk:	ds	2
-curdsk:	ds	1
+curfmt:	ds	1
 cursec:	ds	1
 Lfce2:	ds	1
 dmaadr:	ds	2
@@ -3564,7 +3575,7 @@ wrflg:	ds	1	; 1=write disk
 Lfce6:	ds	1
 Lfce7:	ds	2
 curblm:	ds	1	; DPB.BLM+1
-Lfcea:	ds	1	; Lfcd8
+Lfcea:	ds	1	; newdrv
 Lfceb:	ds	2	; curtrk
 Lfced:	ds	1	; Lfce2
 Lfcee:	ds	1
@@ -3577,13 +3588,13 @@ savtrk:	ds	4	; current track for each drive
 Lfcfc:	ds	1
 Lfcfd:	ds	1
 fdcbuf:	ds	8	; FDC parameter block, start with HDS/DS1/DS0
-Lfd06:	ds	1	; write command (from fdXfmY buffers)
-Lfd07:	ds	1	; read command (from fdXfmY buffers)
+wrcmd:	ds	1	; write command (from fdXfmY buffers)
+rdcmd:	ds	1	; read command (from fdXfmY buffers)
 
 Lfd08:	ds	1
-Lfd09:	ds	1	; drive type, 0=8"
+drvsz5:	ds	1	; drive type, 0=8"
 Lfd0a:	ds	1
-Lfd0b:	ds	1	; num sides
+hlftrk:	ds	1	; 1=half-track mode (40t media in 80t drive)
 cursid:	ds	1
 
 fdcmtr:	ds	4	; motor/access timeouts for each drive
