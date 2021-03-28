@@ -199,7 +199,7 @@ siovec:	dw	nulint	; xx70 - chB TxE
 	dw	axtint	; xx7a - chA Ext/sts change
 	dw	arxint	; xx7c - chA RxA
 	dw	aspint	; xx7e - chA Rx spc
-ctcvec:	dw	nulint	; xx80 - CTC ch0 - unused
+ctcvec:	dw	nulint	; xx80 - CTC ch0 - not used
 Lde86:	dw	vertbl	; xx82 - CTC ch1 - video
 	dw	pckbint	; xx84 - CTC ch2 - PC Keyboard
 	dw	fdcint	; xx86 - CTC ch3 - FDC
@@ -1581,6 +1581,7 @@ lstout:	lxi	h,Le940
 	rlc
 	jmp	Le95e
 
+; no longer a direct interrupt routine...
 tick:	sspd	savst2
 	lxi	sp,ticstk
 	push	h
@@ -1630,8 +1631,8 @@ ticret:	pop	psw
 	pop	b
 	pop	h
 	lspd	savst2
-	ei
-	reti
+	; no longer a direct interrupt routine
+	ret
 
 ; call tick hook function before return to interrupted code.
 Le9f1:	pop	psw
@@ -1641,12 +1642,13 @@ Le9f1:	pop	psw
 	push	h
 	lhld	ticfnc
 	xthl
-	ei
-	reti
+	; no longer a direct interrupt routine
+	ret
 
 	dw	0,0,0,0,0
 ticstk:	ds	0
 savst2:	dw	0
+ticpre:	db	6	; 60Hz / 6 = 10Hz
 
 ; software sets ticcnt to number of ticks,
 ; optionally ticfnc to function to call, ticena to "1",
@@ -2494,13 +2496,7 @@ clrscr:	mvi	a,004h	; off, ena RAM
 	xra	a
 	sta	crtstr+10
 	call	Lf19e
-	di
-	; setup vert. blanking intr
-	mvi	a,0cfh	; intr, ctr, falling, TC, reset
-	out	CTC_1
-	mvi	a,001h	; TC=1 (immediate)
-	out	CTC_1
-	ei
+	; TODO: set a flag to avoid excessive updates?
 	mvi	b,001h
 	ldx	e,+11
 	bitx	1,+3
@@ -2530,13 +2526,7 @@ Lf09e:	lda	crtstr+10
 	inrx	+10
 	jr	Lf0ae
 Lf0aa:	mvix	0,+10
-Lf0ae:	di
-	; setup vert. blanking intr
-	mvi	a,0cfh
-	out	CTC_1	; intr, ctr, falling, TC, reset
-	mvi	a,001h
-	out	CTC_1
-	ei
+Lf0ae:	; TODO: set a flag to avoid excessive updates?
 	bitx	1,+3
 	jrz	Lf0cb
 	mvi	a,24
@@ -2554,12 +2544,24 @@ Lf0cb:	ldx	a,+1
 ; on-shot, only triggers when something changes
 ; CRT_ROW naturally stays in-sync?
 vertbl:	push	psw
+	lda	crtstr+14
+	ani	00000000b
+	jrnz	vbgrf
+	; text vert. blanking code
+	; for now, just always update...
 	lda	crtstr+10
 	out	CRT_ROW
 	lda	crtstr+16
 	out	CRT_HUE
-	mvi	a,003h	; disable intr
-	out	CTC_1
+vbret:
+	push	h
+	lxi	h,ticpre
+	dcr	m
+	jrnz	vbret1
+	mvi	m,6	; count down to 0.1 seconds
+	call	tick
+vbret1:
+	pop	h
 reti1:	pop	psw
 	ei
 	reti
@@ -2567,10 +2569,10 @@ reti1:	pop	psw
 ; vert. blanking in graphics mode. no pages...
 ; same as Jr80 CTC ch1 - fires continuously
 ; CRT_ADR must be re-set every frame
-Lf0ed:	push	psw
+vbgrf:	; graphics vert. blanking code
 	xra	a
 	out	CRT_ADR
-	jr	reti1
+	jr	vbret
 
 escseq:	mvix	1,+4
 	ret
@@ -2951,13 +2953,7 @@ crtpag:	bitx	1,+14
 	dad	b
 	mov	a,m	; new row...
 	sta	crtstr+10	; set it
-	di
-	; setup vert. blanking intr
-	mvi	a,0cfh	; intr, ctr, falling, TC, reset
-	out	CTC_1
-	mvi	a,001h
-	out	CTC_1
-	ei
+	; TODO: set a flag to avoid excessive updates?
 	jr	ixret3
 
 ; Set pixel/text color (foreground)
@@ -3064,14 +3060,12 @@ Lf449:	lxi	b,9
 	xra	a
 	sta	crtstr+16
 	sta	crtstr+18
-	lxi	h,vertbl
-	shld	Lde86
 	lxi	h,Leebf
 	lxi	d,Leee7
 Lf46c:	push	d
 	push	h
-	mvi	c,24
-	call	callhl
+	mvi	c,CAN	; clear screen
+	call	callhl	; conout to CRT:
 	pop	h
 	shld	Le92a
 	shld	Le93a
@@ -3080,15 +3074,6 @@ Lf46c:	push	d
 	shld	Lde51+1
 	bitx	1,+14	; graphics mode?
 	jrz	ixret2	; skip if text mode
-	lxi	h,Lf0ed
-	shld	Lde86
-	di
-	; setup vert. blanking intr
-	mvi	a,0cfh	; intr, ctr, falling, TC, reset
-	out	CTC_1
-	mvi	a,1	; TC=1 (immediate)
-	out	CTC_1
-	ei
 ixret2:	popix
 	ret
 
@@ -3430,11 +3415,6 @@ Lf5d5:	di
 	; internal console
 	mvi	a,10111101b	; CON:=CRT: RDR:=UR2: PUN:=UP2: LST:=LPT:
 	sta	defiob
-	; setup vert. retrace intr
-	mvi	a,0cfh	; intr, ctr, falling, TC, reset
-	out	CTC_1
-	mvi	a,001h	; TC=1 (immediate)
-	out	CTC_1
 	; setup keyboard
 	mov	a,b
 	ani	CFG_PCK		; PC keyboard?
