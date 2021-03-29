@@ -21,3 +21,5 @@ check: rom.bin zout/rom.cim
 # cp cpm22.dsk jr80-1.dsk
 # dd if=~/Downloads/junior80/tpd801.raw bs=1 count=5639 conv=notrunc of=jr80-1.dsk
 # dd if=zout/bios.cim bs=1 seek=5639 conv=notrunc of=jr80-1.dsk
+# Create IMD
+# raw2imd -c 80 -h 2 -s 9 -l 512 -m -o 1 -T "Test Junior-80 boot disk" jr80-1.dsk jr80-1.imd
