@@ -57,6 +57,9 @@ CRT_CTL	equ	4ah
 CRT_HUE	equ	4bh	; how used?
 CRT_ROW	equ	4ch	; text mode top row of screen
 
+CLK_SIO	equ	4dh	; select clock source (1=ext)
+INT_RST	equ	4fh	; interrupt reset for PC kbd
+
 ; DMAC count reg high bits
 DMA_RD	equ	80h
 DMA_WR	equ	40h
@@ -1766,6 +1769,7 @@ pckbint:
 	push	b
 	push	d
 	in	PP_A	; scan code
+	out	INT_RST	; clear intr
 	mov	e,a
 	ani	07fh
 	lxi	b,00006h
@@ -3364,6 +3368,7 @@ Lf5d5:	di
 	;
 	mvi	a,092h	; A mode 0 in, B mode 0 in; C out
 	out	PP_CTL
+	out	INT_RST	; clear intr
 	mvi	a,PPC_SPG+PPC_KRS
 	out	PP_C
 	; Z80-PIO
