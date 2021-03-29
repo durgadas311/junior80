@@ -2,7 +2,7 @@
 diskdef jr80
   seclen 512
   sectrk 18
-  tracks 160
+  tracks 80
   blocksize 2048
   maxdir 128
   skewtab 0,2,4,6,8,1,3,5,7,9,11,13,15,17,10,12,14,16
