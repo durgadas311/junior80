@@ -138,6 +138,8 @@ ccp$fill1	equ	ccp$pg+07b8h
 
 bdos$fill1	equ	bdos$pg+030ah
 
+tpa$size	equ	(bdos$pg/1024)
+
 	org	bios$pg
 
 	jmp	cboot
@@ -204,9 +206,9 @@ siovec:	dw	nulint	; xx70 - chB TxE
 	dw	aspint	; xx7e - chA Rx spc
 ctcvec:	dw	nulint	; xx80 - CTC ch0 - not used
 Lde86:	dw	vertbl	; xx82 - CTC ch1 - video
-	dw	pckbint	; xx84 - CTC ch2 - PC Keyboard
+	dw	pckbint	; xx84 - CTC ch2 - PC Keyboard (scan codes)
 	dw	fdcint	; xx86 - CTC ch3 - FDC
-piovec:	dw	pckbint	; xx88 - PIO chA - PC keyboard (scan codes)
+piovec:	dw	akbint	; xx88 - PIO chA - ASCII keyboard
 	dw	nulint	; xx8a - PIO chB - ???
 	dw	0	; xx8c
 	dw	0	; xx8e
@@ -2086,7 +2088,7 @@ Led25:	pop	psw
 
 Led29:	ani	0fbh
 	mov	m,a
-	mvi	a,041h
+	mvi	a,'A'
 	call	Lec57
 	jr	Led37
 
@@ -3343,9 +3345,7 @@ Lf5d5:	di
 	inr	c	;CTC_1 - vert blanking intr
 	outp	e	; 0cfh - ei, ctr, falling, TC, reset
 	outp	l	; TC=1 - immediate
-	inr	c	;CTC_2 - PC kbd intr
-	outp	e	; 0cfh - ei, ctr, falling, TC, reset
-	outp	l	; TC=1 - immediate
+	inr	c	;CTC_2 - PC kbd intr - not yet
 	inr	c	;CTC_3 - FDC intr
 	mvi	a,0dfh	; ei, ctr, rising, TC, reset
 	outp	a	;
@@ -3368,15 +3368,14 @@ Lf5d5:	di
 	;
 	mvi	a,092h	; A mode 0 in, B mode 0 in; C out
 	out	PP_CTL
-	out	INT_RST	; clear intr
 	mvi	a,PPC_SPG+PPC_KRS
 	out	PP_C
-	; Z80-PIO
+	; Z80-PIO chA
 	mvi	a,04fh	; mode 1 input
 	out	PIO_AC
 	mvi	a,LOW piovec	; intr vector
 	out	PIO_AC
-	; Z80-SIO
+	; Z80-SIO chA+B
 	mvi	b,8
 	mvi	c,SIO_AC
 	lxi	h,Lf8e1
@@ -3438,6 +3437,7 @@ Lf5d5:	di
 Lf6db:	dcr	c
 	jrnz	Lf6db
 	djnz	Lf6db
+	out	INT_RST		; clear intr
 	ori	PPC_KRS		; re-enable kbd
 	out	PP_C
 	; setup PC keyboard intr
@@ -3448,9 +3448,12 @@ Lf6db:	dcr	c
 	;
 	exaf
 	exx
-Lf6e8:	mvi	l,083h	; EI on PIO chA
+	; TODO: fallthrough enables *both* keyboards...
+	; jr	Lf6ea	;???
+; ASCII (parallel) keyboard
+Lf6e8:	mvi	l,083h		; EI on PIO chA
 	mvi	c,PIO_AC	; ASCII kbd
-	outp	l	; set kbd intr
+	outp	l		; set kbd intr
 	; setup disk drives
 Lf6ea:	mov	a,b	; sys cfg dipsw
 	ani	CFG_801	; 8" drives?
@@ -3486,7 +3489,10 @@ Lf71f:	ei
 	db	'.'
 	db	((VERS/10) MOD 10)+'0'
 	db	(VERS MOD 10)+'1'
-	db	' A  ** 57k CP/M 2.2 compatible **',CR,LF
+	db	' A  ** '
+	db	'0'+(tpa$size/10)
+	db	'0'+(tpa$size MOD 10)
+	db	'k CP/M 2.2 compatible **',CR,LF
 	db	BEL,'$'
 	call	print
 	db	CR,LF

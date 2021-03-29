@@ -173,7 +173,7 @@ L003b:	lxi	d,0fb4fh	;; 003b: 11 4f fb    .O.
 
 ; copied into 0fb4fh
 L0046:	mvi	a,092h	; A mode 0 in, B mode 0 in; C out
-	out	PP_CTL	; map RAM at 0?
+	out	PP_CTL	; map RAM at 0? PP_C=0 from reset... PPC_KRS=0
 	; test RAM at 1st 16K
 	lxi	h,0000h		;; 004a: 21 00 00    ...
 L004d:	mov	a,m		;; 004d: 7e          ~
@@ -221,7 +221,7 @@ L0065:	mvi	a,0c3h		;; 0065: 3e c3       >.
 	ani	CFG_PCK		;; 0094: e6 08       ..
 	lxi	d,04f83h	;; 0096: 11 83 4f    ..O
 	jrz	L00ad		;; 0099: 28 12       (.
-	; init parallel keyboard on i8255 chC
+	; init PC keyboard on i8255 chC
 	out	INT_RST		;; 009b: d3 4f       .O
 	in	PP_C		;; 009d: db 02       ..
 	ori	PPC_KRS		; serial kbd on
