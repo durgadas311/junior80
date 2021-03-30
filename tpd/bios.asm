@@ -3763,7 +3763,7 @@ Lf8f2:	db	0
 	db	0e5h,0e5h
 	ds	1024-($-secbuf)
 
-dirbuf:	ds	128	; scratch buffer
+dirbuf:	ds	128	; scratch buffer for BDOS
 
 alv0:	ds	512/8	; ALV0 - space for 512 blocks
 csv0:	ds	256/4	; CSV0 - space for 256 dir ents
@@ -3814,9 +3814,9 @@ Lfd0a:	ds	1
 hlftrk:	ds	1	; 1=half-track mode (40t media in 80t drive)
 cursid:	ds	1
 
+; These three must be adjacent
 fdcmtr:	ds	4	; motor/access timeouts for each drive
 Lfd11:	ds	1	; enable/prescale for ticcnt tick counter
-			;
 Lfd12:	ds	1	; saved value for Lfd11 during ramdisk I/O
 
 ; SIO A/B input FIFOs

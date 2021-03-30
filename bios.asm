@@ -199,7 +199,7 @@ Lde51:	jmp	Leee7		; CRT mode 20h
 Lde6f:	db	0	; FDC_CTL port image
 
 ; interrupt vectors - 0x70, wboote+109 - use pointer below
-Lde70:
+intvec:
 siovec:	dw	nulint	; xx70 - chB TxE
 	dw	bxtint	; xx72 - chB Ext/sts change
 	dw	brxint	; xx74 - chB RxA
@@ -209,11 +209,12 @@ siovec:	dw	nulint	; xx70 - chB TxE
 	dw	arxint	; xx7c - chA RxA
 	dw	aspint	; xx7e - chA Rx spc
 ctcvec:	dw	nulint	; xx80 - CTC ch0 - not used
-Lde86:	dw	vertbl	; xx82 - CTC ch1 - video
+	dw	vertbl	; xx82 - CTC ch1 - video
 	dw	pckbint	; xx84 - CTC ch2 - PC Keyboard (scan codes)
 	dw	fdcint	; xx86 - CTC ch3 - FDC
 piovec:	dw	akbint	; xx88 - PIO chA - ASCII keyboard
 	dw	nulint	; xx8a - PIO chB - ???
+	; unused vectors, preserved for alignment of extdat...
 	dw	0	; xx8c
 	dw	0	; xx8e
 	dw	0	; xx90
@@ -231,7 +232,7 @@ extdat:	dw	Le920	; CON: input redir vectors
 	dw	tichook	; tick hook structure - 0xa4, wboote+161
 	dw	Xfd1e	; external access to SIO data?
 Ldea8:	dw	rsxe	; RSX?
-	dw	Lde70	; interrupt vectors
+	dw	intvec	; interrupt vectors
 	dw	nulfnc
 	dw	Le950	; RDR: input status redir
 	dw	whooks	; warm boot hooks - 0xb0, wboote+173
@@ -331,7 +332,7 @@ nulfnc:	ret
 
 ; C=new dsk (0-4), E=login bit
 seldsk:	mov	a,c
-Ldf6a:	cpi	005h	; 4 or 5 depending on ramdisk
+	cpi	4
 	lxi	h,0
 	jc	Ldf77
 	xra	a
@@ -2354,7 +2355,7 @@ ticsus:	di
 	lxi	h,Lfd11
 	mov	a,m
 	mvi	m,002h
-	inx	h
+	inx	h	; Lfd12
 	mov	m,a
 	ei
 	ret
@@ -3345,7 +3346,7 @@ Lf5d5:	di
 	out	DMA_CTL
 	lxi	sp,00100h
 	im2
-	mvi	a,HIGH Lde70
+	mvi	a,HIGH intvec
 	stai
 	; CTC init...
 	lxi	d,05fcfh
@@ -3515,8 +3516,6 @@ Lf71f:	ei
 Lf783:	db	'8"',CR,LF
 	db	'Disk drives C & D : '
 Lf79b:	db	'8"',CR,LF,'$'
-	mvi	a,4	; total number of drives supported
-	sta	Ldf6a+1
 	in	PP_B
 	mov	b,a
 	ani	CFG_SER
@@ -3552,9 +3551,9 @@ Lf8e1:	db	14h,4ch	; reg 4 - 16x, 2st, NP
 Lf8e9:	db	11,'AUTOEXEC' ; followed by 'BAT' = 11 chars
 
 Lf8f2:	db	0
-	ds	1024-($-secbuf)
+	ds	1024-($-secbuf)	; rest of sector buffer
 
-dirbuf:	ds	128	; scratch buffer
+dirbuf:	ds	128	; scratch buffer for BDOS
 
 alv0:	ds	512/8	; ALV0 - space for 512 blocks
 csv0:	ds	256/4	; CSV0 - space for 256 dir ents
@@ -3603,9 +3602,9 @@ Lfd0a:	ds	1
 hlftrk:	ds	1	; 1=half-track mode (40t media in 80t drive)
 cursid:	ds	1
 
+; These three must be adjacent
 fdcmtr:	ds	4	; motor/access timeouts for each drive
 Lfd11:	ds	1	; enable/prescale for ticcnt tick counter
-			;
 Lfd12:	ds	1	; saved value for Lfd11 during ramdisk I/O
 
 ; SIO A/B input FIFOs

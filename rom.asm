@@ -427,7 +427,8 @@ sioin:	in	SIO_BC		;; 0245: db 13       ..
 	ret			;; 024c: c9          .
 
 ; PC Keyboard interrupt (scan codes)
-pckbint:	push	psw		;; 024d: f5          .
+pckbint:
+	push	psw		;; 024d: f5          .
 	push	h		;; 024e: e5          .
 	push	b		;; 024f: c5          .
 	in	PP_A	; get key code
