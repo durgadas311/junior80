@@ -124,7 +124,7 @@ DEL	equ	127
 ccp$pg	equ	0c800h
 bdos$pg	equ	0d000h
 bios$pg	equ	0de00h
-rsx$pg	equ	ccp$pg-0100h ; used for???
+rsx$pg	equ	ccp$pg-0100h ; to speed up wboot?
 
 bdose	equ	bdos$pg+6
 rsxe	equ	rsx$pg+6
@@ -138,7 +138,11 @@ ccp$fill1	equ	ccp$pg+07b8h
 
 bdos$fill1	equ	bdos$pg+030ah
 
-tpa$size	equ	(bdos$pg/1024)
+; Ordinarily, this would be the BDOS,
+; but this system prevents the CCP from being
+; overrun and so we lower the boundary even more.
+;tpa$size	equ	(bdos$pg/1024)
+tpa$size	equ	(rsx$pg/1024)
 
 	org	bios$pg
 
@@ -244,7 +248,7 @@ cboot:	lda	defiob
 	sta	usrdrv
 	jmp	wboot
 
-Ldecf:	lxi	h,ccp$pg
+Ldecf:	lxi	h,ccp$cold
 	shld	Ldf61+1
 	lxi	h,Lf8e9
 	lxi	d,ccp$cmd
@@ -1747,17 +1751,18 @@ akbint:	push	psw
 	push	h
 	in	PIO_A
 	ani	07fh
-	lxi	h,Lfd26
-	mvi	m,001h
+	lxi	h,kbdinp
+	mvi	m,001h	; non-zero flag
 	inx	h
-	mov	m,a
+	mov	m,a	; ASCII input char
 reti2:	pop	h
 	pop	psw
 nulint:	ei
 	reti
 
 ; Generic keyboard input status (from interrupt).
-kbdst:	lxi	h,Lfd26
+; Returns 00 or FF only.
+kbdst:	lxi	h,kbdinp
 Lea9b:	mov	a,m
 	ora	a
 	rz
@@ -1774,11 +1779,11 @@ pckbint:
 	out	INT_RST	; clear intr
 	mov	e,a
 	ani	07fh
-	lxi	b,00006h
-	lxi	h,Leae4-1
+	lxi	b,nmetas
+	lxi	h,mtakey+nmetas-1
 	ccdr
-	lxi	h,Leae4
-	jrnz	Leae5
+	lxi	h,mtaflg
+	jrnz	pckkey
 	mov	b,c	; index of match
 	inr	b
 	mvi	a,040h	; convert meta-code into bitmap
@@ -1786,24 +1791,24 @@ Leabb:	rrc
 	djnz	Leabb
 	mov	b,a
 	bit	7,e	; set or clear?
-	jrnz	Leacf
+	jrnz	pckclr
 	mov	a,b
 	cpi	010h
-	jrnc	Leacc	; toggles...
+	jrnc	pcktog	; toggles...
 	ora	m	; set bit
-Leac9:	mov	m,a
-	jr	Lead7
+pckset:	mov	m,a
+	jr	pckret
 
-Leacc:	xra	m
-	jr	Leac9
+pcktog:	xra	m
+	jr	pckset
 
-Leacf:	mov	a,b
+pckclr:	mov	a,b
 	cpi	010h
-	jrnc	Lead7	; not for toggles...
+	jrnc	pckret	; not for toggles...
 	cma		; clear bit
 	ana	m	;
 	mov	m,a
-Lead7:	pop	d
+pckret:	pop	d
 	pop	b
 	pop	h
 	pop	psw
@@ -1812,40 +1817,42 @@ Lead7:	pop	d
 
 ; keyboard scan codes - meta keys
 ; bit 7 indicates "key released"
-	db	3ah	; Caps Lock	D5 (toggle)
+mtakey:	db	3ah	; Caps Lock	D5 (toggle)
 	db	45h	; Num Lock	D4 (toggle)
 	db	38h	; l/r Alt	D3
 	db	1dh	; l/r Ctrl	D2
 	db	2ah	; left Shift	D1
 	db	36h	; right Shift	D0
-Leae4:	db	0
+nmetas	equ	$-mtakey
 
-Leae5:	bit	7,e
-	jrnz	Lead7
-	sta	Lfd27
-	sta	Lfd26
+mtaflg:	db	0
+
+pckkey:	bit	7,e
+	jrnz	pckret	; ignore key-up events
+	sta	kbdinp+1; non-zero
+	sta	kbdinp	; key scan code
 	mov	a,m
-	sta	Lfd28
-	jr	Lead7
+	sta	kbdinp+2	; meta-key modifiers
+	jr	pckret
 
 ; PC keyboard input - convert scan code to ASCII
-pckbin:	call	kbdst
+pckbin:	call	kbdst	; 00 or FF only
 	inr	a
 	jrnz	pckbin
 	mov	m,a	; clear flag
 	inx	h
 	mov	c,m	; get key
 	inx	h
-	mov	e,m	; get meta
+	mov	e,m	; get modifiers
 	mov	a,c
-	cpi	71
+	cpi	nkpad
 	jrc	Leb0c
 	; numeric keypad codes...
 	bit	4,e	; Num Lock?
 	jrz	Leb0c
-	adi	13
+	adi	zkpad
 	mov	c,a
-Leb0c:	lxi	h,Leb4b-1
+Leb0c:	lxi	h,keymap-1
 	mvi	b,0
 	dad	b
 	mov	a,m
@@ -1886,7 +1893,7 @@ Leb47:	dad	b
 	jr	Leb2a
 
 ; Keyboard scan code map to ASCII
-Leb4b:	db	ESC,81h,82h,83h,84h,85h,86h,87h,88h,89h,8ah,8bh,8ch,BS
+keymap:	db	ESC,81h,82h,83h,84h,85h,86h,87h,88h,89h,8ah,8bh,8ch,BS
 	db	TAB,'qwertyuiop',8dh,8eh,CR
 	db	NIL,'asdfghjkl',8fh,90h,91h,NIL
 	db	92h,'zxcvbnm',93h,94h,95h,NIL,96h
@@ -1896,11 +1903,14 @@ Leb4b:	db	ESC,81h,82h,83h,84h,85h,86h,87h,88h,89h,8ah,8bh,8ch,BS
 	db	DC2,CAN,ETX, SO, SI	; F6-F10
 	db	0	; (Num Lock)
 	db	0	; (Scroll Lock)
+skpad	equ	$
+nkpad	equ	skpad-keymap+1
 	; Keypad, NumLock off, right of main
 	db	SYN,SUB,ETB,'-'	; home,   up,  PgUp, -
 	db	 BS, GS,NAK,'+'	; left,  ---, right, +
 	db	ACK, LF,ENQ	;  end, down,  PgDn
 	db	DC2,    DEL	;  Ins 	        Del
+zkpad	equ	$-skpad
 	; Keypad, NumLock on
 	db	'7','8','9','-'
 	db	'4','5','6','+'
@@ -3368,7 +3378,7 @@ Lf5d5:	di
 	;
 	mvi	a,092h	; A mode 0 in, B mode 0 in; C out
 	out	PP_CTL
-	mvi	a,PPC_SPG+PPC_KRS
+	mvi	a,PPC_SPG	; PPC_KRS off (kbd disabled)
 	out	PP_C
 	; Z80-PIO chA
 	mvi	a,04fh	; mode 1 input
@@ -3431,7 +3441,7 @@ Lf5d5:	di
 	exaf
 	; perform PC kbd clear-out...
 	in	PP_C
-	ani	NOT PPC_KRS
+	ani	NOT PPC_KRS	; already off
 	out	PP_C
 	lxi	b,2048	; delay some time
 Lf6db:	dcr	c
@@ -3615,9 +3625,10 @@ Lfd21:	ds	1	; 0ffh - input mask and...?
 Lfd22:	ds	3	; 05h, 4ch, ??
 Lfd25:	ds	1	; 0ffh - input mask and...?
 
-Lfd26:	ds	1	; KBD: input status flag
-Lfd27:	ds	1	; KBD: input character
-Lfd28:	ds	1	; KBD: meta keys
+; Used for both keyboards - consumer must translate scan codes if needed.
+kbdinp:	ds	1	; KBD: input status flag (non-zero)
+	ds	1	; KBD: input character
+	ds	1	; KBD: meta keys - modifiers
 lptbsy:	ds	1	; reflects LPT: BUSY
 
 whooks:	ds	1	; wboot hooks bitmap
