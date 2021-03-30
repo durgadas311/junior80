@@ -365,12 +365,12 @@ crlf:	mvi	c,CR		;; 01da: 0e 0d       ..
 	xputcon			;; 01df: cf          .
 	ret			;; 01e0: c9          .
 
-; another sound...
+; another sound... "greetings" - start of ROM
 L01e1:	lxi	h,L0210		;; 01e1: 21 10 02    ...
 	mvi	b,004h		;; 01e4: 06 04       ..
 	jr	L01ed		;; 01e6: 18 05       ..
 
-; Custom sound output...
+; Custom sound output... "wrong system disk" error
 L01e8:	lxi	h,L0218		;; 01e8: 21 18 02    ...
 	mvi	b,008h		;; 01eb: 06 08       ..
 L01ed:	in	PP_C		;; 01ed: db 02       ..

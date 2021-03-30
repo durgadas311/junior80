@@ -770,9 +770,9 @@ Le268:	sta	wrflg
 	sta	Lfce6
 	lda	drvfmt
 	cpi	010h
-	jz	Le596
+	jz	Le596	; ramdisk
 	ora	a
-	jnz	Le2a0
+	jnz	Le2a0	; not SD
 	call	Le3f5
 	call	Le61d
 	call	seek
@@ -787,6 +787,7 @@ Le268:	sta	wrflg
 	jz	Le43c
 	jmp	Le431
 
+; DD formats...
 Le2a0:	lxi	h,003ffh
 	cpi	003h
 	jz	Le2b2
@@ -865,24 +866,25 @@ Le338:	xra	a
 	inr	a
 	sta	Lfcee
 Le340:	lda	drvfmt
-	cpi	004h
+	cpi	4
 	jnz	Le34a
-	mvi	a,002h
+	mvi	a,2	; pretend to be fmt2 (512b/sc)
 Le34a:	mov	b,a
 	; convert CP/M record to physical sector
-	lda	cursec
+	lda	cursec	; 0..N
 	dcr	b
-	jz	Le35a
+	jz	Le35a	; fmt1
 	dcr	b
-	jz	Le358
+	jz	Le358	; fmt2
+	; fmt3
 	ora	a
 	rar
 Le358:	ora	a
 	rar
 Le35a:	ora	a
 	rar
-	inr	a
-	mov	c,a
+	inr	a	; 1-based phy sec nums
+	mov	c,a	; phy sec num
 	lda	cursid
 	mov	b,a
 	ora	a
@@ -895,26 +897,28 @@ Le36a:	lda	newdrv
 	mov	l,a
 	lda	Lfcfc
 	cmp	l
-	jnz	Le38d
+	jnz	Le38d	; diff drive
 	lxi	h,curtrk
-	lda	fdcbuf+1
+	lda	fdcbuf+1	; C (track)
 	cmp	m
-	jnz	Le38d
-	lda	fdcbuf+2
+	jnz	Le38d	; diff track
+	lda	fdcbuf+2	; H (side)
 	cmp	b
-	jnz	Le38d
-	lda	fdcbuf+3
+	jnz	Le38d	; diff side
+	lda	fdcbuf+3	; R (sector)
 	cmp	c
-	jz	Le3b7
+	jz	Le3b7	; buffer is fresh
+	; diff sector
+; flush buffer if dirty, seek new track
 Le38d:	push	b
 	call	Le3f5
 	call	Le61d
 	call	seek
 	pop	b
 	lxi	h,fdcbuf+3
-	mov	m,c
+	mov	m,c	; new R (sector)
 	dcx	h
-	mov	m,b
+	mov	m,b	; new H (side)
 	lda	Lfcee
 	ora	a
 	jz	Le3b7
@@ -927,10 +931,11 @@ Le38d:	push	b
 	shld	dmaadr
 	rnz
 Le3b7:	lda	drvfmt
-	cpi	003h
-	jz	Le41e
+	cpi	3
+	jz	Le41e	; fmt3
 	rar
-	jc	Le40f
+	jc	Le40f	; fmt1
+	; fmt2 or fmt4
 	lda	cursec
 	ani	003h
 	rrc
@@ -3586,8 +3591,11 @@ Lf6db:	dcr	c
 	;
 	exaf
 	exx
-	mvi	c,PIO1_AC	; (PIO1_AC - PC kbd)
-Lf6e8:	outp	l	; set kbd intr
+	; TODO: fallthrough enables *both* keyboards...
+	; jr	Lf6ea	;???
+; ASCII (parallel) keyboard
+	mvi	c,PIO1_AC	; ASCII kbd
+Lf6e8:	outp	l		; set kbd intr
 	; setup disk drives
 Lf6ea:	mov	a,b	; sys cfg dipsw
 	ani	CFG_501	; 5.25" drives?
