@@ -8,6 +8,9 @@ zout/rom.cim: rom.asm
 zout/bios.cim: bios.asm
 	zmac --dri -i -8 -c -s -n bios.asm
 
+zout/judisk.cim: judisk.asm
+	zmac --dri -i -8 -c -s -n $<
+
 check: rom.bin zout/rom.cim
 	sum $^
 
