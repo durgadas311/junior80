@@ -2,13 +2,7 @@ all:	zout/rom.cim zout/bios.cim
 
 bios:	zout/bios.cim
 
-zout/rom.cim: rom.asm
-	zmac --dri -i -8 -c -s -n rom.asm
-
-zout/bios.cim: bios.asm
-	zmac --dri -i -8 -c -s -n bios.asm
-
-zout/judisk.cim: judisk.asm
+zout/%.cim: %.asm
 	zmac --dri -i -8 -c -s -n $<
 
 check: rom.bin zout/rom.cim
@@ -20,6 +14,7 @@ check: rom.bin zout/rom.cim
 # Create CP/M 2.2 distribution files:
 # cp blank.dsk cpm22.dsk
 # cpmcp -f jr80 cpm22.dsk ~/Downloads/cpm22dist/* 0:
+# cpmcp -t -f jr80 cpm22.dsk dump.asm sysgen.asm 0:
 # Create sysgen'd Junior-80 disk:
 # cp cpm22.dsk jr80-1.dsk
 # dd if=~/Downloads/junior80/tpd801.raw bs=1 count=5639 conv=notrunc of=jr80-1.dsk
