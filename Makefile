@@ -23,3 +23,5 @@ check: rom.bin zout/rom.cim
 # xz -z -k -f jr80-1.dsk
 # Create IMD
 # raw2imd -c 80 -h 2 -s 9 -l 512 -m -o 1 -T "Test Junior-80 boot disk" jr80-1.dsk jr80-1.imd
+# cpmcp -t -f jr80 jr80-2.dsk rom.mac 0:rom.asm
+# cpmcp -t -f jr80 jr80-2.dsk bios.mac 0:bios.asm
