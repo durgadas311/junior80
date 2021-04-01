@@ -13,3 +13,9 @@ chk_idisk: idisk.com zout/idisk.cim
 
 chk_judisk: judisk.com zout/judisk.cim
 	sum $^
+
+chk_sysgen: sysgen.com zout/sysgen.cim
+	sum $^
+
+chk_sysgent: sysgent.com zout/sysgent.cim
+	sum $^
