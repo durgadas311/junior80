@@ -1,9 +1,22 @@
 all:	zout/rom.cim zout/bios.cim
 
+TITLE_jr80-1 = "Test Junior-80 boot disk"
+TITLE_jr80-2 = "Test Junior-80 boot disk 2"
+TITLE_jr80-ws = "WordStar Distro disk"
+
 bios:	zout/bios.cim
+
+imd: jr80-1.imd jr80-2.imd jr80-ws.imd
+xz: jr80-1.dsk.xz jr80-2.dsk.xz jr80-ws.dsk.xz
 
 zout/%.cim: %.asm
 	zmac --dri -i -8 -c -s -n $<
+
+%.dsk.xz: %.dsk
+	xz -z -k -f $<
+
+%.imd: %.dsk
+	raw2imd -c 80 -h 2 -s 9 -l 512 -m -o 1 -T $(TITLE_$*) $< $@
 
 check: rom.bin zout/rom.cim
 	sum $^
