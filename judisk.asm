@@ -60,13 +60,25 @@ L011f:	call	print
 	jmp	cpm
 
 chkdrv:
+	mvi	b,4
 	in	PP_B
 	ani	CFG_801+CFG_823
+	jz	L014b
+	mvi	b,2
+	ani	CFG_801
 	jz	L014b
 	db	CAN,BEL,'\8" DRIVES NOT SUPPORTED',21h,'\$'
 	jmp	cpm
 
 L014b:
+	mov	a,b
+	sta	numdrv
+	dcr	a
+	adi	'A'
+	sta	drvmax
+	sta	drvmx2
+	sta	drvmx3
+	sta	drvmx4
 	lxi	d,V7_INTV
 	lhld	cpm+1
 	dad	d
@@ -89,7 +101,9 @@ menu:	call	print
 	db	CAN,'\** junior-80 **  '
 	db	'5" DISK UTILITY v2.72\\'
 	db	TAB,'The disk utility has the following options:\\'
-	db	'COPY DISK   -  duplicate a diskette using two floppy disk drives.\'
+		; DRI MAC.COM has 64-byte limit for DB:
+	db	'COPY DISK   -  duplicate a diskette using '
+	db		'two floppy disk drives.\'
 	db	'Both source and target diskettes must have the same density.\'
 	db	'After writing a track, it is read into memory and verified.\\'
 	db	'FORMAT DISK - format diskettes in single or double density.\'
@@ -238,7 +252,10 @@ L061e:	lxi	sp,stack
 	call	print
 	db	'\\\\FORMAT DISK UTILITY$'
 L063c:	call	print
-	db	'\\Select disk (A-D) to FORMAT or type (SPACE) to reboot: $'
+	db	'\\Select disk (A-'
+drvmax:	db		'D) to FORMAT or type (SPACE) to reboot: $'
+	lda	numdrv
+	mov	b,a
 	call	conine
 	cpi	CR
 	jz	L061e
@@ -249,7 +266,7 @@ L063c:	call	print
 	sta	L07e7
 	sui	'A'
 	jc	L063c
-	cpi	'D'-'A'+1
+	cmp	b
 	jnc	L063c
 	sta	fdcbuf+1
 	sta	curcmd+2	; DS1/DS0
@@ -325,8 +342,8 @@ L0850:	sta	retry
 	lxi	h,fdcres+2
 	jmp	L0c20
 
-L088c:	call	L0b0b
-	call	L0d9b
+L088c:	call	onesec
+	call	recal
 	lda	fdcbuf+2
 	mov	b,a
 	lxi	h,fmtbuf
@@ -407,6 +424,7 @@ L092b:	call	print
 vecsav:	dw	0	; original/BIOS FDC intr routine
 vecptr:	dw	0	; FDC intr vector location
 
+numdrv:	db	4
 ddflg:	db	0	; 0=SD, 1/2=DD
 retry:	db	5
 errflg:	db	0	; controls retry (TBD)
@@ -509,11 +527,10 @@ L0ace:	mov	a,m
 	ani	0c0h
 	ret
 
-L0ada:
-	; DD setup
+onetrk:	; full-track 5" DD DS DT setup
 	lxi	h,(9*512)-1	; one track
 L0aee:	lxi	d,fdfmt2
-L0afa:	shld	dmalen
+	shld	dmalen
 	lxi	h,curfmt
 	mvi	b,6
 L0b02:	ldax	d
@@ -524,16 +541,14 @@ L0b02:	ldax	d
 	jnz	L0b02
 	ret
 
-L0b0b:
+onesec:	; single sector 5" DD DS DT setup
 	lxi	h,512-1	; one sector
 	jmp	L0aee
 
-L0b28:	call	L0d9b
+chkden:	call	recal
 	mvi	a,002h
 	sta	ddflg
-	lxi	h,512-1
-	lxi	d,fdfmt2
-	call	L0afa
+	call	onesec
 	call	readid
 	rz
 	call	print
@@ -607,7 +622,7 @@ L0bb2:	lxi	h,curcmd
 	push	psw
 	lda	curcmd+3	; track
 	push	psw
-	call	L0d9e
+	call	recal1
 	pop	psw
 	sta	curcmd+3	; restore track
 	call	L0dac
@@ -732,8 +747,8 @@ L0d8e:	lda	curcmd+2	; print drive
 	mvi	a,':'
 	jmp	conout
 
-L0d9b:	call	sense
-L0d9e:	xra	a
+recal:	call	sense
+recal1:	xra	a
 	sta	curcmd+3	; track is 0
 	lxi	h,curcmd+1	; overwrite FDC r/w cmd
 	mvi	m,007h	; RECALIBRATE command
@@ -802,7 +817,10 @@ L0e14:	lxi	sp,stack
 	call	print
 	db	'\\\\VERIFY DISK UTILITY$'
 L0e32:	call	print
-	db	'\\Select disk (A-D) to VERIFY or type (SPACE) to reboot: $'
+	db	'\\Select disk (A-'
+drvmx4:	db		'D) to VERIFY or type (SPACE) to reboot: $'
+	lda	numdrv
+	mov	b,a
 	call	conine
 	cpi	CR
 	jz	L0e14
@@ -813,10 +831,10 @@ L0e32:	call	print
 	sta	L0f27
 	sui	'A'
 	jc	L0e32
-	cpi	'D'-'A'+1
+	cmp	b
 	jnc	L0e32
 	sta	curcmd+2	; set DS1/DS0 in cmd buf
-	call	L0b28
+	call	chkden
 	jnz	L0e14
 	call	L0d7f
 	lda	ddflg
@@ -890,7 +908,10 @@ L0f6e:	lxi	sp,stack
 	call	print
 	db	'\\\\COPY DISK UTILITY$'
 L0f8a:	call	print
-	db	'\\Select source disk (A-D) or type (SPACE) to reboot: $'
+	db	'\\Select source disk (A-'
+drvmx2:	db		'D) or type (SPACE) to reboot: $'
+	lda	numdrv
+	mov	b,a
 	call	conine
 	cpi	CR
 	jz	L0f6e
@@ -901,7 +922,7 @@ L0f8a:	call	print
 	sta	L10b0
 	sui	'A'
 	jc	L0f8a
-	cpi	'D'-'A'+1
+	cmp	b
 	jnc	L0f8a
 	sta	srcdrv
 	sta	curcmd+2	; DS1/DS0
@@ -909,7 +930,10 @@ L0f8a:	call	print
 	db	CR,SYN,'Source $'
 	call	L0d85
 L0ff9:	call	print
-	db	'\Select target disk (A-D) or type (SPACE) to reboot: $'
+	db	'\Select target disk (A-'
+drvmx3:	db		'D) or type (SPACE) to reboot: $'
+	lda	numdrv
+	mov	b,a
 	call	conine
 	cpi	CR
 	jz	L0f6e
@@ -920,7 +944,7 @@ L0ff9:	call	print
 	sta	L10f5
 	sui	'A'
 	jc	L0ff9
-	cpi	'D'-'A'+1
+	cmp	b
 	jnc	L0ff9
 	sta	dstdrv
 	sta	curcmd+2	; DS1/DS0
@@ -947,7 +971,7 @@ L10b0:	db	'A: and type (CR)$'
 	jnz	L109a
 	lda	srcdrv
 	sta	curcmd+2	; DS1/DS0
-	call	L0b28
+	call	chkden
 	jnz	L0f6e
 L10df:	call	print
 	db	CR,SYN,'Load target disk '
@@ -966,7 +990,7 @@ L10f5:	db	'A: and type (CR)$'
 	lda	ddflg
 	mov	c,a
 	push	b
-	call	L0b28
+	call	chkden
 	pop	b
 	jnz	L0f6e
 	lda	ddflg
@@ -976,7 +1000,7 @@ L10f5:	db	'A: and type (CR)$'
 	db	'\DIFFERENT TARGET DISK DENSITY',BEL,'$'
 	jmp	L0f6e
 
-L115d:	call	L0ada
+L115d:	call	onetrk
 L1160:	call	conbrk
 	lxi	h,buffer
 	shld	dmaadr
@@ -1008,7 +1032,7 @@ L11a5:	sta	retry2
 	jnz	L117d
 	lxi	h,buffer2
 	shld	dmaadr
-	call	L0ada
+	call	onetrk
 	mvi	a,1
 	sta	curcmd+5	; sector
 	call	read

@@ -20,6 +20,9 @@ zout/%.cim: %.asm
 %.imd: %.dsk
 	raw2imd -c 80 -h 2 -s 9 -l 512 -m -o 1 -T $(TITLE_$*) $< $@
 
+%.mac: %.asm
+	sed -e 's/\([A-Z0-9]\)_\([A-Z0-9]\)/\1@\2/g' $< >$@
+
 # show sum of originam ROM and current build
 check: rom.bin zout/rom.cim
 	sum $^
@@ -32,29 +35,24 @@ jr80-1.dsk: zout/bios.cim
 jr80-2.dsk:: zout/bios.cim
 	dd if=zout/bios.cim bs=1 seek=5639 conv=notrunc of=$@
 
+# cpmrm doesn't return error if no file...
 jr80-2.dsk:: rom.mac
-	-cpmrm -f jr80 jr80-2.dsk 0:rom.asm
+	cpmrm -f jr80 jr80-2.dsk 0:rom.asm
 	cpmcp -t -f jr80 jr80-2.dsk ./rom.mac 0:rom.asm
 
 jr80-2.dsk:: bios.mac
-	-cpmrm -f jr80 jr80-2.dsk 0:bios.asm
+	cpmrm -f jr80 jr80-2.dsk 0:bios.asm
 	cpmcp -t -f jr80 jr80-2.dsk ./bios.mac 0:bios.asm
 
 jr80-2.dsk:: zout/sysgen.cim
-	-cpmrm -f jr80 jr80-2.dsk 0:'sysgen.*'
+	cpmrm -f jr80 jr80-2.dsk 0:'sysgen.*'
 	cpmcp -f jr80 jr80-2.dsk $< 0:sysgen.com
 	cpmcp -t -f jr80 jr80-2.dsk ./sysgen.asm 0:
 
-#jr80-2.dsk:: zout/judisk.cim
-#	-cpmrm -f jr80 jr80-2.dsk 0:'judisk.*'
-#	cpmcp -f jr80 jr80-2.dsk $< 0:judisk.com
-#	cpmcp -t -f jr80 jr80-2.dsk ./judisk.asm 0:
-
-bios.mac: bios.asm
-	sed -e 's/\([A-Z0-9]\)_\([A-Z0-9]\)/\1@\2/g' $< >$@
-
-rom.mac: rom.asm
-	sed -e 's/\([A-Z0-9]\)_\([A-Z0-9]\)/\1@\2/g' $< >$@
+jr80-2.dsk:: zout/judisk.cim judisk.mac
+	cpmrm -f jr80 jr80-2.dsk 0:'judisk.*'
+	cpmcp -f jr80 jr80-2.dsk zout/judisk.cim 0:judisk.com
+	cpmcp -t -f jr80 jr80-2.dsk ./judisk.mac 0:judisk.asm
 
 # To patch CP/M into a disk image:
 # Create a 720K blank image:
