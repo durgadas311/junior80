@@ -417,7 +417,7 @@ getcon:	call	conin		;; 0234: cd 4f ff    .O.
 	rc			;; 023e: d8          .
 	cpi	'z'+1		;; 023f: fe 7b       .{
 	rnc			;; 0241: d0          .
-	ani	01011111b	;; 0242: e6 5f       .@
+	ani	01011111b	;; 0242: e6 5f       ._
 	ret			;; 0244: c9          .
 
 sioin:	in	SIO@BC		;; 0245: db 13       ..
@@ -638,7 +638,7 @@ fd5len:	dw	(16*128)-1	; 5.25" lengths of tracks
 	dw	(16*256)-1
 	dw	(9*512)-1
 	dw	(5*1024)-1
-	dw	(16*288)-1	; really? 288-byte sectors?
+	dw	(9*512)-1
 
 L03ef:	lhld	dmacnt		;; 03ef: 2a 74 ff    *t.
 	inx	h		;; 03f2: 23          #
@@ -1008,7 +1008,7 @@ L06f3:	in	PP@B		;; 06f3: db 01       ..
 	call	L06fd		;; 06fa: cd fd 06    ...
 L06fd:	xra	a		;; 06fd: af          .
 	sta	fdcbuf+3		;; 06fe: 32 61 ff    2a.
-	lxi	h,fdcbuf+1	;; 0701: 21 5f ff    .@.
+	lxi	h,fdcbuf+1	;; 0701: 21 5f ff    ._.
 	mvi	m,007h		;; 0704: 36 07       6.
 	mvi	c,001h		;; 0706: 0e 01       ..
 	call	L0571		;; 0708: cd 71 05    .q.
@@ -1023,7 +1023,7 @@ L070f:	lda	0ff5dh		;; 070f: 3a 5d ff    :].
 	jz	L071d		;; 0718: ca 1d 07    ...
 	rlc			;; 071b: 07          .
 	stax	d		;; 071c: 12          .
-L071d:	lxi	h,fdcbuf+1	;; 071d: 21 5f ff    .@.
+L071d:	lxi	h,fdcbuf+1	;; 071d: 21 5f ff    ._.
 	mvi	m,00fh		;; 0720: 36 0f       6.
 	mvi	c,002h		;; 0722: 0e 02       ..
 	call	L0571		;; 0724: cd 71 05    .q.
@@ -1035,7 +1035,7 @@ L071d:	lxi	h,fdcbuf+1	;; 071d: 21 5f ff    .@.
 L072d:	lda	fdccmd		;; 072d: 3a 68 ff    :h.
 	ani	040h	; save MFM bit
 	ori	00ah	; READ ID command
-	lxi	h,fdcbuf+1	;; 0734: 21 5f ff    .@.
+	lxi	h,fdcbuf+1	;; 0734: 21 5f ff    ._.
 	mov	m,a		;; 0737: 77          w
 	mvi	c,001h		;; 0738: 0e 01       ..
 	call	L0571		;; 073a: cd 71 05    .q.

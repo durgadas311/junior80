@@ -638,7 +638,7 @@ fd5len:	dw	(16*128)-1	; 5.25" lengths of tracks
 	dw	(16*256)-1
 	dw	(9*512)-1
 	dw	(5*1024)-1
-	dw	(16*288)-1	; really?! 288-byte sectors?
+	dw	(9*512)-1
 
 L03ef:	lhld	dmacnt		;; 03ef: 2a 74 ff    *t.
 	inx	h		;; 03f2: 23          #
